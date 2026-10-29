@@ -37,7 +37,9 @@ export function ProfileScreen() {
       <div className="panel">
         <div className="panel-head"><h2>Серия дней</h2><span className="muted">{7 - wk} до бонусного яйца</span></div>
         <div className="week" aria-label={`${wk} из 7 дней`}>{Array.from({ length: 7 }, (_, i) => <i key={i} className={i < wk ? "on" : ""} />)}</div>
-        <p className="muted">Открывайте яйцо дня 7 дней подряд и получите бонусное. Пропуск дня обнуляет серию.</p>
+        <p className="muted">{s.season.rules.eggIntervalHours === 24
+          ? "Открывайте яйцо дня 7 дней подряд и получите бонусное. Пропуск дня обнуляет серию."
+          : "Открывайте бесплатное яйцо 7 раз подряд, как только оно готово, и получите бонусное. Если пропустить, серия обнулится."}</p>
         {s.season.rules.streakFreezesPerWeek > 0 && (
           <p className="muted"><b>Заморозка серии:</b> {s.me.freezeAvailable ? "есть на этой неделе. Если пропустите один день, серия не сгорит." : "на этой неделе уже потрачена. Новая появится в понедельник."}</p>
         )}

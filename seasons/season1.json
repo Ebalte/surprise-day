@@ -14,6 +14,7 @@
       "epic":      { "weight": 10, "shards": 8 },
       "legendary": { "weight": 2,  "shards": 20 }
     },
+    "eggIntervalHours": 24,
     "pityThreshold": 10,
     "pityHintFrom": 3,
     "craftCosts": { "common": 30, "rare": 60, "epic": 120 },

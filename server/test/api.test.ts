@@ -244,3 +244,29 @@ test("напоминание «яйцо готово» приходит один
   await notifyEggReady(botApi, env.WEB_APP_URL);
   assert.equal(sent.slice(before).filter((s) => s.payload.chat_id === TG(8)).length, 1);
 });
+
+test("время между яйцами меняется в настройках: 6 часов вместо суток", async () => {
+  await setSetting("eggIntervalHours", 6, 1);
+  await call(9, "GET", "/api/state");
+  const u = await userOf(9);
+  const t0 = Date.now();
+  await openEgg(u.id, new Date(t0));
+  const state = (await call(9, "GET", "/api/state")).body;
+  assert.equal(Date.parse(state.eggs.nextFreeAt) - t0, 6 * 3600_000, "следующее — через 6 часов");
+  assert.equal(state.season.rules.eggIntervalHours, 6);
+  await assert.rejects(openEgg(u.id, new Date(t0 + 5 * 3600_000)), /не готово/);
+  const next = await openEgg(u.id, new Date(t0 + 6 * 3600_000 + 1000));
+  assert.equal(next.result.source, "DAILY");
+  assert.equal((await userOf(9)).streak, 2, "серия считается по интервалу: два яйца подряд");
+  // через два интервала без яйца серия сгорела бы (заморозку тратим заранее)
+  await prisma.user.update({ where: { id: u.id }, data: { streakFreezeWeek: `${weekKey(new Date(t0 + 30 * 3600_000))}:1` } });
+  await openEgg(u.id, new Date(t0 + 30 * 3600_000));
+  assert.equal((await userOf(9)).streak, 1);
+
+  // напоминание: прошло 6 часов — пора
+  await prisma.user.update({ where: { id: u.id }, data: { notificationsEnabled: true, lastFreeEggAt: new Date(Date.now() - 6 * 3600_000 - 60_000), eggReadyNotifiedAt: null } });
+  const before = sent.length;
+  await notifyEggReady(botApi, env.WEB_APP_URL);
+  assert.equal(sent.slice(before).filter((s) => s.payload.chat_id === TG(9)).length, 1);
+  await setSetting("eggIntervalHours", 24, 1);
+});

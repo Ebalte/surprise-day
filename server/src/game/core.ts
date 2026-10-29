@@ -217,14 +217,18 @@ function freezesUsed(user: Pick<User, "streakFreezeWeek">, wk: string) {
 export const freezeAvailable = (user: Pick<User, "streakFreezeWeek">, rules: StoredRules, now = new Date()) =>
   freezesUsed(user, weekKey(now)) < rules.streakFreezesPerWeek;
 
-/** Серия живёт 48 ч после яйца дня; заморозка прощает ещё сутки */
+/** Интервал между бесплатными яйцами в мс (настройка «Время между яйцами», по умолчанию сутки) */
+export const eggInterval = (rules: Pick<StoredRules, "eggIntervalHours">) => (rules.eggIntervalHours ?? 24) * 3600_000;
+
+/** Серия живёт два интервала после яйца (для суток — 48 ч); заморозка прощает ещё один пропуск */
 export function liveStreak(user: User, rules: StoredRules, now = new Date()) {
   if (!user.lastFreeEggAt) return user.streak;
-  const gap = now.getTime() - user.lastFreeEggAt.getTime();
-  return gap < 2 * DAY || (gap < 3 * DAY && freezeAvailable(user, rules, now)) ? user.streak : 0;
+  const gap = now.getTime() - user.lastFreeEggAt.getTime(), step = eggInterval(rules);
+  return gap < 2 * step || (gap < 3 * step && freezeAvailable(user, rules, now)) ? user.streak : 0;
 }
 
-export const freeEggAt = (user: Pick<User, "lastFreeEggAt">) => (user.lastFreeEggAt ? new Date(user.lastFreeEggAt.getTime() + DAY) : new Date(0));
+export const freeEggAt = (user: Pick<User, "lastFreeEggAt">, rules: Pick<StoredRules, "eggIntervalHours">) =>
+  user.lastFreeEggAt ? new Date(user.lastFreeEggAt.getTime() + eggInterval(rules)) : new Date(0);
 
 // ------------------------------------------------------------------ яйцо
 
@@ -260,7 +264,8 @@ export async function openEgg(userId: number, now = new Date()) {
   const result = await prisma.$transaction(async (tx) => {
     await lockUsers(tx, userId);
     const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
-    const free = now >= freeEggAt(user);
+    const free = now >= freeEggAt(user, ctx.rules);
+    const step = eggInterval(ctx.rules);
     let source: DropSource = "DAILY", minRarity: RarityKey | null = null, grantId: number | null = null;
     let streakBonus = false, froze = false;
     const userUpdate: Prisma.UserUpdateInput = { totalEggs: { increment: 1 }, firstEggAt: user.firstEggAt ?? now };
@@ -268,8 +273,8 @@ export async function openEgg(userId: number, now = new Date()) {
     if (free) {
       const gap = user.lastFreeEggAt ? now.getTime() - user.lastFreeEggAt.getTime() : Infinity;
       let streak = 1;
-      if (gap < 2 * DAY) streak = user.streak + 1;
-      else if (gap < 3 * DAY && freezeAvailable(user, ctx.rules, now)) {
+      if (gap < 2 * step) streak = user.streak + 1;
+      else if (gap < 3 * step && freezeAvailable(user, ctx.rules, now)) {
         streak = user.streak + 1;
         froze = true;
         const wk = weekKey(now);
@@ -277,7 +282,7 @@ export async function openEgg(userId: number, now = new Date()) {
       }
       Object.assign(userUpdate, { lastFreeEggAt: now, streak, bestStreak: Math.max(user.bestStreak, streak) });
       if (streak % 7 === 0) {
-        streakBonus = (await addGrants(tx, userId, [{ source: "STREAK_BONUS", dedupeKey: `streak:${now.toISOString().slice(0, 10)}` }])) > 0;
+        streakBonus = (await addGrants(tx, userId, [{ source: "STREAK_BONUS", dedupeKey: `streak:${streak}:${now.getTime()}` }])) > 0;
       }
     } else {
       const grant = await tx.eggGrant.findFirst({ where: { userId, usedAt: null }, orderBy: { createdAt: "asc" } });

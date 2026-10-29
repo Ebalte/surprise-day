@@ -76,6 +76,12 @@
             }
           }
         },
+        "eggIntervalHours": {
+          "type": "number",
+          "minimum": 0.25,
+          "maximum": 168,
+          "description": "Часов между бесплатными яйцами. 24 — раз в сутки, 0.5 — каждые 30 минут"
+        },
         "pityThreshold": {
           "type": "integer",
           "minimum": 1,

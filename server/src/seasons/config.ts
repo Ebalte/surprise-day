@@ -15,6 +15,8 @@ const rulesSchema = z.object({
       shards: z.number().int().min(0),
     }),
   ),
+  /// Сколько часов между бесплатными яйцами (по умолчанию сутки). Можно дробное: 0.5 = 30 минут.
+  eggIntervalHours: z.number().min(0.25).max(168).default(24),
   pityThreshold: z.number().int().min(1),
   /// С какого числа оставшихся яиц показывать «новинка гарантирована в ближайших N яйцах»
   pityHintFrom: z.number().int().min(0).default(3),

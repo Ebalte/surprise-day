@@ -48,7 +48,7 @@ export async function gameState(user: User, links: Parameters<typeof refLink>[1]
       })),
       mainCount: ctx.main.length,
       rules: {
-        rarities: rules.rarities, pityThreshold: rules.pityThreshold, pityHintFrom: rules.pityHintFrom,
+        rarities: rules.rarities, eggIntervalHours: rules.eggIntervalHours, pityThreshold: rules.pityThreshold, pityHintFrom: rules.pityHintFrom,
         craftCosts: rules.craftCosts, trading: rules.trading, streakFreezesPerWeek: rules.streakFreezesPerWeek,
       },
       album: ctx.album,
@@ -57,7 +57,7 @@ export async function gameState(user: User, links: Parameters<typeof refLink>[1]
     collection: Object.fromEntries(owned),
     progress: { dryStreak: us?.dryStreak ?? 0, unique: us?.uniqueCount ?? 0, startedAt: us?.startedAt ?? null, completedAt: us?.completedAt ?? null },
     eggs: {
-      freeAvailable: now >= freeEggAt(user), nextFreeAt: freeEggAt(user).toISOString(),
+      freeAvailable: now >= freeEggAt(user, rules), nextFreeAt: freeEggAt(user, rules).toISOString(),
       grants: grants.map((g) => ({ id: g.id, source: g.source, label: GRANT_LABEL[g.source], minRarity: g.minRarity ? rk(g.minRarity) : null })),
     },
     shop,

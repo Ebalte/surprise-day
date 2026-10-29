@@ -60,7 +60,7 @@ export type GameState = {
   season: {
     slug: string; title: string; badge: { code: string; title: string; icon: string | null };
     figures: FigureDto[]; mainCount: number;
-    rules: { rarities: Record<Rarity, { weight: number; shards: number }>; pityThreshold: number; pityHintFrom: number; craftCosts: Partial<Record<Rarity, number>>; trading: { giftsPerDay: number; tradeableRarities: Rarity[]; offerTtlHours: number }; streakFreezesPerWeek: number };
+    rules: { rarities: Record<Rarity, { weight: number; shards: number }>; eggIntervalHours: number; pityThreshold: number; pityHintFrom: number; craftCosts: Partial<Record<Rarity, number>>; trading: { giftsPerDay: number; tradeableRarities: Rarity[]; offerTtlHours: number }; streakFreezesPerWeek: number };
     album: { rows: { figures: string[]; reward: Reward }[]; sets: { code: string; title: string; rarity?: Rarity; frame: { code: string; title: string; color: string } }[] };
     events: { slug: string; title: string; startsAt: string; endsAt: string; dropChance: number; figureCodes: string[]; badge: { code: string; title: string; icon?: string }; active: boolean }[];
   };

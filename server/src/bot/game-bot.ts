@@ -6,6 +6,8 @@ import type { UserFromGetMe } from "grammy/types";
 import { prisma } from "../db.js";
 import { upsertTgUser } from "../game/social.js";
 import { fulfillPayment, validateCheckout } from "../game/shop.js";
+import { eggInterval } from "../game/core.js";
+import { getActiveRules } from "../seasons/active.js";
 import { markRefunded } from "../admin/purchases.js";
 
 export type GameBotOptions = { token: string; webAppUrl: string; botInfo?: UserFromGetMe };
@@ -83,11 +85,12 @@ export async function notifyUser(api: Api, webAppUrl: string, userId: number, te
 
 /** Раз в минуту: кому пора напомнить, что яйцо дня готово */
 export async function notifyEggReady(api: Api, webAppUrl: string) {
+  const secs = eggInterval(await getActiveRules()) / 1000;
   const due = await prisma.$queryRaw<{ id: number }[]>`
     SELECT id FROM users
     WHERE "notificationsEnabled" AND NOT "botBlocked" AND NOT "isBanned"
-      AND "lastFreeEggAt" IS NOT NULL AND "lastFreeEggAt" <= now() - interval '24 hours'
-      AND ("eggReadyNotifiedAt" IS NULL OR "eggReadyNotifiedAt" < "lastFreeEggAt" + interval '24 hours')
+      AND "lastFreeEggAt" IS NOT NULL AND "lastFreeEggAt" <= now() - ${secs} * interval '1 second'
+      AND ("eggReadyNotifiedAt" IS NULL OR "eggReadyNotifiedAt" < "lastFreeEggAt" + ${secs} * interval '1 second')
     LIMIT 200`;
   for (const { id } of due) {
     await prisma.user.update({ where: { id }, data: { eggReadyNotifiedAt: new Date() } });

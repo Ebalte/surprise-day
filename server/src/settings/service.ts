@@ -42,7 +42,28 @@ const intList = (min: number, max: number, minLen: number, maxLen: number) => (i
 
 const bool = (input: string) => /^(1|да|вкл|on|true|yes)$/i.test(input.trim());
 
+const hours = (input: string) => {
+  const n = Number(input.trim().replace(",", "."));
+  if (!Number.isFinite(n) || n < 0.25 || n > 168) throw new SettingError("Нужно число часов от 0.25 (15 минут) до 168 (неделя)");
+  return Math.round(n * 100) / 100;
+};
+const fmtHours = (v: unknown) => {
+  const h = v as number;
+  if (h < 1) return `${Math.round(h * 60)} мин`;
+  return Number.isInteger(h) ? `${h} ч` : `${Math.floor(h)} ч ${Math.round((h % 1) * 60)} мин`;
+};
+
 export const SETTINGS: SettingDef[] = [
+  {
+    key: "eggIntervalHours",
+    title: "Время между яйцами",
+    hint: "Сколько часов ждать следующее бесплатное яйцо. Например: 24 — раз в сутки, 12, 6, 0.5 — каждые 30 минут. Серия дней считается по этому же интервалу.",
+    kind: "value",
+    fromConfig: (r) => r.eggIntervalHours,
+    parse: hours,
+    format: fmtHours,
+    apply: (r, v) => { r.eggIntervalHours = v as number; },
+  },
   {
     key: "shop.eggPricesStars",
     title: "Цены яиц в Stars",
