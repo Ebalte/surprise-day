@@ -8,6 +8,7 @@ import { registerAds } from "./ads.js";
 import { registerSettings } from "./settings.js";
 import { registerTools } from "./tools.js";
 import { registerPurchases } from "./purchases.js";
+import { registerEvents } from "./events.js";
 
 export type AdDraft = {
   placement?: "REWARDED" | "BANNER";
@@ -56,7 +57,8 @@ export const menuKeyboard = () =>
   new InlineKeyboard()
     .text("📢 Реклама", "ads").text("⚙️ Настройки", "settings").row()
     .text("📊 Статистика", "stats").text("👤 Игрок", "player").row()
-    .text("💳 Покупки", "pur").text("📨 Рассылка", "bc");
+    .text("💳 Покупки", "pur").text("🌙 События", "ev").row()
+    .text("📨 Рассылка", "bc");
 
 export const backToMenu = () => new InlineKeyboard().text("◀ Меню", "menu");
 
@@ -112,6 +114,7 @@ export function createAdminBot(opts: AdminBotOptions) {
   registerSettings(bot, steps);
   registerTools(bot, steps, opts);
   registerPurchases(bot, opts);
+  registerEvents(bot);
 
   bot.on("message", async (ctx) => {
     const handler = ctx.session.step ? steps[ctx.session.step] : undefined;

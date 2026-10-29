@@ -100,7 +100,8 @@ export function CollectionScreen() {
 
       {s.season.events.map((ev) => {
         const figs = ev.figureCodes.map((c) => by.get(c)).filter(Boolean) as FigureDto[];
-        if (!figs.length || (!ev.active && !figs.some((f) => cnt(f.code)) && Date.parse(ev.startsAt) > t)) return null;
+        // Событие видно, пока оно идёт, или если у игрока уже есть его фигурки
+        if (!figs.length || (!ev.active && !figs.some((f) => cnt(f.code)))) return null;
         const got = s.badges.some((b) => b.code === ev.badge.code);
         return (
           <div className="panel" key={ev.slug}>

@@ -61,6 +61,8 @@ export function ProfileScreen() {
         </div>
         {s.season.events.map((ev) => {
           const got = s.badges.some((b) => b.code === ev.badge.code);
+          // Бейдж события виден, только пока оно идёт или если он уже получен / начат
+          if (!got && !ev.active && !ev.figureCodes.some((c) => s.collection[c])) return null;
           return (
             <div key={ev.slug} className={`badge-card ${got ? "" : "locked"}`}>
               <img className="medal" src={asset(ev.badge.icon ?? "/badges/collector_season1.svg")} alt="" />

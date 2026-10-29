@@ -192,6 +192,12 @@ export async function effectiveRules(stored: StoredRules): Promise<StoredRules> 
   for (const def of SETTINGS) {
     if (def.apply && overrides.has(def.key)) def.apply(rules, overrides.get(def.key));
   }
+  // Даты событий, изменённые в админ-боте (раздел «События»)
+  const schedule = overrides.get("events.schedule") as Record<string, { startsAt: string; endsAt: string }> | undefined;
+  rules.events?.forEach((e) => {
+    const o = schedule?.[e.slug];
+    if (o) Object.assign(e, { startsAt: o.startsAt, endsAt: o.endsAt });
+  });
   return rules;
 }
 

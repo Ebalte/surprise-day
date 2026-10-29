@@ -303,3 +303,35 @@ test("рассылка с фото: первому — загрузка файл
   assert.deepEqual(kb(photos[0]), { text: "Открыть игру", web_app: { url: "https://game.example" } }, "игрокам — кнопка запуска Mini App внутри Telegram");
   assert.match(String(calls.findLast((c) => String(c.payload.text ?? "").includes("Рассылка завершена"))?.payload.text), /Доставлено: 2/);
 });
+
+test("события: запуск сейчас, продление, остановка, возврат дат из конфига", async () => {
+  const cfg = (await getActiveRules()).events!.find((e) => e.slug === "fireflies")!;
+  const active = async () => {
+    const e = (await getActiveRules()).events!.find((x) => x.slug === "fireflies")!;
+    return new Date(e.startsAt) <= new Date() && new Date() < new Date(e.endsAt);
+  };
+  await tap("ev");
+  assert.match(lastText(), /Ночь светлячков/);
+  await tap("ev:fireflies");
+  assert.match(lastText(), /из конфига/);
+
+  await tap("ev.start:fireflies:3");
+  assert.match(lastText(), /✅ Запущено до/);
+  assert.equal(await active(), true);
+  const end1 = Date.parse((await getActiveRules()).events!.find((x) => x.slug === "fireflies")!.endsAt);
+  assert.ok(Math.abs(end1 - (Date.now() + 3 * 86400_000)) < 60_000, "на 3 дня");
+
+  await tap("ev.start:fireflies:1");
+  assert.match(lastText(), /✅ Продлено до/);
+  const end2 = Date.parse((await getActiveRules()).events!.find((x) => x.slug === "fireflies")!.endsAt);
+  assert.ok(Math.abs(end2 - end1 - 86400_000) < 1000, "продлено на сутки от прежнего конца");
+
+  await tap("ev.stop:fireflies");
+  assert.match(lastText(), /Остановлено/);
+  assert.equal(await active(), false);
+
+  await tap("ev.reset:fireflies");
+  const back = (await getActiveRules()).events!.find((x) => x.slug === "fireflies")!;
+  assert.equal(back.startsAt, cfg.startsAt);
+  assert.equal(back.endsAt, cfg.endsAt);
+});
