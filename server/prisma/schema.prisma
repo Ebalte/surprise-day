@@ -376,13 +376,16 @@ model UserQuest {
 /// Оплата яйца в Telegram Stars. Яйцо выдаётся только после successful_payment от бота.
 /// Яйца за рекламу отдельной таблицы не требуют: это egg_grants с dedupeKey "ad:<дата>".
 model Purchase {
-  id               Int      @id @default(autoincrement())
+  id               Int       @id @default(autoincrement())
   userId           Int
   /// telegram_payment_charge_id — нужен для возврата и защиты от повторной обработки
-  telegramChargeId String   @unique
+  telegramChargeId String    @unique
   stars            Int
   payload          String
-  createdAt        DateTime @default(now())
+  /// Звёзды возвращены игроку через админ-бота
+  refundedAt       DateTime?
+  refundedBy       BigInt?
+  createdAt        DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

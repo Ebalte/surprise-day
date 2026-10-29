@@ -54,6 +54,15 @@ export const SETTINGS: SettingDef[] = [
     apply: (r, v) => { r.shop.eggPricesStars = v as number[]; },
   },
   {
+    key: "shop.enabled",
+    title: "Покупки за Stars",
+    hint: "",
+    kind: "bool",
+    fromConfig: () => true,
+    parse: bool,
+    format: (v) => (v ? "включены" : "выключены"),
+  },
+  {
     key: "shop.adEggsPerDay",
     title: "Яиц за рекламу в день",
     hint: "Число от 0 до 10. 0 — кнопка «Реклама: +1 яйцо» пропадёт.",
@@ -165,7 +174,7 @@ export async function effectiveRules(stored: StoredRules): Promise<StoredRules> 
   return rules;
 }
 
-export async function getFlag(key: "ads.enabled" | "maintenance"): Promise<boolean> {
+export async function getFlag(key: "ads.enabled" | "maintenance" | "shop.enabled"): Promise<boolean> {
   const overrides = await getOverrides();
   return overrides.has(key) ? Boolean(overrides.get(key)) : (settingByKey(key)!.fromConfig({} as StoredRules) as boolean);
 }

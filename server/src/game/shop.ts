@@ -7,6 +7,7 @@ import type { Api } from "grammy";
 import type { User } from "@prisma/client";
 import { prisma } from "../db.js";
 import { GameError, addGrants, loadSeason } from "./core.js";
+import { getFlag } from "../settings/service.js";
 
 type Payload = { u: number; c: number; n: number; p: number };
 
@@ -16,11 +17,13 @@ export async function shopState(user: User) {
   const { rules } = await loadSeason();
   const prices = rules.shop.eggPricesStars;
   const used = await prisma.purchase.count({ where: { userId: user.id, createdAt: { gte: cycleStart(user) } } });
-  return { prices, used, left: Math.max(0, prices.length - used), nextPrice: used < prices.length ? prices[used] : null };
+  const enabled = await getFlag("shop.enabled");
+  return { enabled, prices, used, left: Math.max(0, prices.length - used), nextPrice: used < prices.length ? prices[used] : null };
 }
 
 export async function createEggInvoice(api: Api, user: User) {
   const s = await shopState(user);
+  if (!s.enabled) throw new GameError("shop_disabled", "Покупка яиц сейчас недоступна", 403);
   if (s.nextPrice == null) throw new GameError("shop_limit", `Все ${s.prices.length} яйца куплены. Цена сбросится с новым яйцом дня`);
   const payload: Payload = { u: user.id, c: cycleStart(user).getTime(), n: s.used, p: s.nextPrice };
   let link: string;
@@ -47,6 +50,8 @@ export async function validateCheckout(rawPayload: string, totalAmount: number, 
   const user = await prisma.user.findUnique({ where: { id: p.u } });
   if (!user || Number(user.telegramId) !== telegramId) return "Счёт выставлен другому игроку";
   if (user.isBanned) return "Аккаунт заблокирован";
+  // Выключили покупки, пока игрок держал открытый счёт — не берём оплату
+  if (!(await getFlag("shop.enabled"))) return "Покупка яиц сейчас недоступна";
   if (cycleStart(user).getTime() !== p.c) return "Цена уже сбросилась. Откройте магазин ещё раз";
   const s = await shopState(user);
   if (s.used !== p.n || s.nextPrice !== p.p || totalAmount !== p.p) return "Цена изменилась. Откройте магазин ещё раз";

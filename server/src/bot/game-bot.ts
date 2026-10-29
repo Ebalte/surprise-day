@@ -6,6 +6,7 @@ import type { UserFromGetMe } from "grammy/types";
 import { prisma } from "../db.js";
 import { upsertTgUser } from "../game/social.js";
 import { fulfillPayment, validateCheckout } from "../game/shop.js";
+import { markRefunded } from "../admin/purchases.js";
 
 export type GameBotOptions = { token: string; webAppUrl: string; botInfo?: UserFromGetMe };
 
@@ -47,6 +48,10 @@ export function createGameBot(opts: GameBotOptions) {
     const p = ctx.message.successful_payment;
     const r = await fulfillPayment(p.invoice_payload, p.telegram_payment_charge_id, p.total_amount);
     if (!r.duplicate) await ctx.reply("✅ Оплата прошла. Бонусное яйцо уже ждёт в игре!", { reply_markup: playKeyboard(opts.webAppUrl) });
+  });
+
+  bot.on("message:refunded_payment", async (ctx) => {
+    await markRefunded(ctx.message.refunded_payment.telegram_payment_charge_id);
   });
 
   // Пользователь заблокировал или разблокировал бота

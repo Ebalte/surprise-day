@@ -11,15 +11,29 @@ import { prisma } from "../src/db.js";
 import { getActiveRules } from "../src/seasons/active.js";
 import { completeAdView, startAdView, AdError } from "../src/ads/service.js";
 import { invalidateSettings } from "../src/settings/service.js";
+import { Api } from "grammy";
+import { createEggInvoice, fulfillPayment, validateCheckout } from "../src/game/shop.js";
 
 const ADMIN = 7001, STRANGER = 7002, TEST_TG = 990001n;
 const TAG = "test-admin-";
 type Call = { method: string; payload: Record<string, unknown> };
 const calls: Call[] = [];
+const gameCalls: Call[] = [];
+
+// Игровой бот: от его имени идут возвраты. Платёж "chg-fail" Telegram отклоняет.
+const gameApi = new Api("456:TEST_GAME");
+gameApi.config.use(async (_prev, method, payload) => {
+  gameCalls.push({ method, payload: payload as Record<string, unknown> });
+  if ((payload as { telegram_payment_charge_id?: string }).telegram_payment_charge_id === "chg-fail") {
+    return { ok: false, error_code: 400, description: "Bad Request: CHARGE_ALREADY_REFUNDED" } as never;
+  }
+  return { ok: true, result: method === "createInvoiceLink" ? "https://t.me/$inv" : true } as never;
+});
 
 const bot = createAdminBot({
   token: "123:TEST",
   adminIds: [ADMIN],
+  gameApi,
   botInfo: {
     id: 1, is_bot: true, first_name: "Admin", username: "surprise_admin_bot",
     can_join_groups: false, can_read_all_group_messages: false, supports_inline_queries: false,
@@ -181,4 +195,55 @@ test("выключенная реклама не показывается", asyn
   const u = await prisma.user.findUniqueOrThrow({ where: { telegramId: TEST_TG } });
   await prisma.eggGrant.deleteMany({ where: { userId: u.id, source: "AD" } });
   await assert.rejects(startAdView(u.id), (e: AdError) => e.code === "disabled");
+});
+
+test("выключатель покупок: кнопка в настройках, сервер не выдаёт и не принимает счета", async () => {
+  const u = await prisma.user.update({ where: { telegramId: TEST_TG }, data: { isBanned: false } }); // забанен тестом выше
+  await tap("settings");
+  assert.match(lastText(), /Покупки за Stars: <b>включены<\/b>/);
+  const inv = await createEggInvoice(gameApi, u);
+  await tap("set:shop.enabled");
+  assert.match(lastText(), /Покупки за Stars: выключены/);
+  await assert.rejects(createEggInvoice(gameApi, u), /сейчас недоступна/);
+  const payload = String(gameCalls.filter((c) => c.method === "createInvoiceLink").at(-1)!.payload.payload);
+  assert.match(String(await validateCheckout(payload, inv.price, Number(TEST_TG))), /сейчас недоступна/, "старый счёт тоже не оплатить");
+  await tap("set:shop.enabled");
+  assert.equal(await validateCheckout(payload, inv.price, Number(TEST_TG)), null);
+});
+
+test("покупки: список, карточка, возврат звёзд забирает неоткрытое яйцо", async () => {
+  const u = await prisma.user.findUniqueOrThrow({ where: { telegramId: TEST_TG } });
+  const payload = JSON.stringify({ u: u.id, c: 0, n: 0, p: 25 });
+  await fulfillPayment(payload, "chg-ok", 25);
+  await fulfillPayment(payload, "chg-fail", 50);
+  const ok = await prisma.purchase.findUniqueOrThrow({ where: { telegramChargeId: "chg-ok" } });
+
+  await tap("pur");
+  assert.match(lastText(), /Всего: <b>2 шт · 75 ⭐<\/b>/);
+  await tap(`pur:${ok.id}`);
+  assert.match(lastText(), /яйцо ещё не открыто/);
+  await tap(`pur.ref:${ok.id}`);
+  assert.match(lastText(), /Вернуть <b>25 ⭐<\/b>.*Неоткрытое купленное яйцо заберём/s);
+  await tap(`pur.refok:${ok.id}`);
+  const call = gameCalls.find((c) => c.method === "refundStarPayment" && c.payload.telegram_payment_charge_id === "chg-ok");
+  assert.equal(call?.payload.user_id, Number(TEST_TG));
+  assert.match(lastText(), /✅ Возвращено 25 ⭐, неоткрытое яйцо забрано/);
+  assert.ok((await prisma.purchase.findUniqueOrThrow({ where: { id: ok.id } })).refundedAt);
+  assert.equal(await prisma.eggGrant.count({ where: { userId: u.id, dedupeKey: "purchase:chg-ok" } }), 0);
+
+  // повторный возврат той же покупки невозможен
+  const before = gameCalls.length;
+  await tap(`pur.refok:${ok.id}`);
+  assert.equal(gameCalls.length, before);
+  await tap("pur");
+  assert.match(lastText(), /Всего: <b>1 шт · 50 ⭐<\/b>/);
+  assert.match(lastText(), /Возвращено: 1 шт · 25 ⭐/);
+});
+
+test("возврат: если Telegram отказал, покупка остаётся оплаченной", async () => {
+  const fail = await prisma.purchase.findUniqueOrThrow({ where: { telegramChargeId: "chg-fail" } });
+  await tap(`pur.refok:${fail.id}`);
+  assert.match(lastText(), /Telegram не принял возврат: Bad Request: CHARGE_ALREADY_REFUNDED/);
+  assert.equal((await prisma.purchase.findUniqueOrThrow({ where: { id: fail.id } })).refundedAt, null);
+  assert.equal(await prisma.eggGrant.count({ where: { dedupeKey: "purchase:chg-fail", usedAt: null } }), 1);
 });

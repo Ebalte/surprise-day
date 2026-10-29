@@ -2,11 +2,12 @@
  * Админ-бот: отдельный Telegram-бот только для администраторов.
  * Доступ — по Telegram ID из ADMIN_IDS. Всё остальное игнорируется.
  */
-import { Bot, Context, GrammyError, InlineKeyboard, session, type SessionFlavor } from "grammy";
+import { Api, Bot, Context, GrammyError, InlineKeyboard, session, type SessionFlavor } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import { registerAds } from "./ads.js";
 import { registerSettings } from "./settings.js";
 import { registerTools } from "./tools.js";
+import { registerPurchases } from "./purchases.js";
 
 export type AdDraft = {
   placement?: "REWARDED" | "BANNER";
@@ -33,8 +34,10 @@ export type AdminContext = Context & SessionFlavor<AdminSession>;
 export type AdminBotOptions = {
   token: string;
   adminIds: number[];
-  /** Токен игрового бота — для рассылки игрокам */
+  /** Токен игрового бота — для рассылки игрокам и возврата звёзд */
   gameBotToken?: string;
+  /** Для тестов: готовый клиент игрового бота вместо токена */
+  gameApi?: Api;
   webAppUrl?: string;
   /** Для тестов: чтобы бот не ходил в getMe */
   botInfo?: UserFromGetMe;
@@ -49,7 +52,7 @@ export const menuKeyboard = () =>
   new InlineKeyboard()
     .text("📢 Реклама", "ads").text("⚙️ Настройки", "settings").row()
     .text("📊 Статистика", "stats").text("👤 Игрок", "player").row()
-    .text("📨 Рассылка", "bc");
+    .text("💳 Покупки", "pur").text("📨 Рассылка", "bc");
 
 export const backToMenu = () => new InlineKeyboard().text("◀ Меню", "menu");
 
@@ -66,6 +69,9 @@ export async function show(ctx: AdminContext, text: string, keyboard?: InlineKey
   }
   await ctx.reply(text, opts);
 }
+
+/** Клиент игрового бота: от его имени идут рассылки и возвраты звёзд */
+export const gameApi = (opts: AdminBotOptions) => opts.gameApi ?? (opts.gameBotToken ? new Api(opts.gameBotToken) : null);
 
 export async function showMenu(ctx: AdminContext) {
   ctx.session.step = undefined;
@@ -101,6 +107,7 @@ export function createAdminBot(opts: AdminBotOptions) {
   registerAds(bot, steps);
   registerSettings(bot, steps);
   registerTools(bot, steps, opts);
+  registerPurchases(bot, opts);
 
   bot.on("message", async (ctx) => {
     const handler = ctx.session.step ? steps[ctx.session.step] : undefined;

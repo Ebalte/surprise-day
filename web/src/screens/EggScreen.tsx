@@ -130,6 +130,8 @@ export function EggScreen() {
   const grant = s.eggs.grants[0];
   const hasEgg = free || !!grant;
   const event = s.season.events.find((e) => e.active && Date.parse(e.endsAt) > t);
+  const showAd = s.ads.perDay > 0 && (s.ads.rewarded || s.ads.left === 0);
+  const showShop = s.shop.enabled && s.shop.prices.length > 0;
 
   const tap = async () => {
     if (cls) return;
@@ -197,23 +199,29 @@ export function EggScreen() {
         <div className="panel"><span className="ad-label">Реклама</span><AdMedia ad={banner} /><p>{banner.text}</p><AdLink ad={banner} /></div>
       )}
 
-      {!free && (
+      {!free && (showAd || showShop) && (
         <div className="panel">
           <h2>Хочется ещё яйцо?</h2>
           <div className="btn-row">
-            {s.ads.perDay > 0 && (s.ads.rewarded || s.ads.left === 0) && (
+            {showAd && (
               <button className="btn ghost" disabled={!s.ads.rewarded} onClick={() => setSheet("ad")}>{s.ads.rewarded ? "Реклама: +1 яйцо" : "Реклама уже была сегодня"}</button>
             )}
-            <button className="btn" disabled={s.shop.nextPrice == null} onClick={() => setSheet("buy")}>
-              {s.shop.nextPrice != null ? <>{STAR}<span>{s.shop.nextPrice} Stars: яйцо</span></> : `Все ${s.shop.prices.length} куплены`}
-            </button>
+            {showShop && (
+              <button className="btn" disabled={s.shop.nextPrice == null} onClick={() => setSheet("buy")}>
+                {s.shop.nextPrice != null ? <>{STAR}<span>{s.shop.nextPrice} Stars: яйцо</span></> : `Все ${s.shop.prices.length} куплены`}
+              </button>
+            )}
           </div>
-          <div className="chips" style={{ justifyContent: "flex-start" }}>
-            {s.shop.prices.map((p, i) => (
-              <span key={i} className={`chip num ${i === s.shop.used ? "hot" : ""}`} style={i < s.shop.used ? { textDecoration: "line-through", opacity: 0.55 } : undefined}>{i + 1}-е: {p} Stars</span>
-            ))}
-          </div>
-          <p className="muted">Каждое следующее дороже. Цена вернётся к {s.shop.prices[0]} Stars вместе с новым яйцом дня. Шансы как у обычного яйца.</p>
+          {showShop && (
+            <>
+              <div className="chips" style={{ justifyContent: "flex-start" }}>
+                {s.shop.prices.map((p, i) => (
+                  <span key={i} className={`chip num ${i === s.shop.used ? "hot" : ""}`} style={i < s.shop.used ? { textDecoration: "line-through", opacity: 0.55 } : undefined}>{i + 1}-е: {p} Stars</span>
+                ))}
+              </div>
+              <p className="muted">Каждое следующее дороже. Цена вернётся к {s.shop.prices[0]} Stars вместе с новым яйцом дня. Шансы как у обычного яйца.</p>
+            </>
+          )}
         </div>
       )}
 
@@ -229,7 +237,7 @@ export function EggScreen() {
       </div>
 
       {sheet === "ad" && <AdSheet onClose={(got) => { setSheet(null); if (got) void refresh(); }} />}
-      {sheet === "buy" && s.shop.nextPrice != null && <BuySheet s={s} onClose={() => { setSheet(null); void refresh(); }} />}
+      {sheet === "buy" && showShop && s.shop.nextPrice != null && <BuySheet s={s} onClose={() => { setSheet(null); void refresh(); }} />}
       {reveal && <Reveal data={reveal} onClose={closeReveal} />}
     </section>
   );

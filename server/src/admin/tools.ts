@@ -1,6 +1,6 @@
 import { Api, GrammyError, InlineKeyboard, type Bot } from "grammy";
 import { prisma, startOfUtcDay } from "../db.js";
-import { backToMenu, esc, show, type AdminBotOptions, type AdminContext, type StepHandlers } from "./bot.js";
+import { backToMenu, esc, gameApi, show, type AdminBotOptions, type AdminContext, type StepHandlers } from "./bot.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let broadcastRunning = false;
@@ -12,7 +12,7 @@ async function showStats(ctx: AdminContext) {
     prisma.user.count({ where: { createdAt: { gte: today } } }),
     prisma.user.count({ where: { lastSeenAt: { gte: today } } }),
     prisma.eggLog.count({ where: { createdAt: { gte: today }, source: { not: "CRAFT" } } }),
-    prisma.purchase.aggregate({ where: { createdAt: { gte: today } }, _count: true, _sum: { stars: true } }),
+    prisma.purchase.aggregate({ where: { createdAt: { gte: today }, refundedAt: null }, _count: true, _sum: { stars: true } }),
     prisma.eggGrant.count({ where: { source: "AD", createdAt: { gte: today } } }),
     prisma.adCampaign.count({ where: { isActive: true } }),
     prisma.user.count({ where: { isBanned: true } }),
@@ -50,7 +50,7 @@ async function showPlayer(ctx: AdminContext, userId: number, note = "") {
   ].filter((l, i) => i > 0 || l).join("\n");
   const kb = new InlineKeyboard()
     .text("🥚 +1 яйцо", `pl.egg:${userId}`).text("💎 +50 осколков", `pl.shards:${userId}`).row()
-    .text(user.isBanned ? "✅ Разбанить" : "🚫 Забанить", `pl.ban:${userId}`).row()
+    .text(user.isBanned ? "✅ Разбанить" : "🚫 Забанить", `pl.ban:${userId}`).text("💳 Покупки", `pur.u:${userId}`).row()
     .text("🔎 Другой игрок", "player").text("◀ Меню", "menu");
   await show(ctx, text, kb);
 }
@@ -72,6 +72,7 @@ export function registerTools(bot: Bot<AdminContext>, steps: StepHandlers, opts:
     ctx.session.step = undefined;
     await showPlayer(ctx, user.id);
   };
+  bot.callbackQuery(/^pl\.show:(\d+)$/, (ctx) => showPlayer(ctx, Number(ctx.match[1])));
   bot.callbackQuery(/^pl\.egg:(\d+)$/, async (ctx) => {
     const userId = Number(ctx.match[1]);
     await prisma.$transaction([
@@ -103,7 +104,7 @@ export function registerTools(bot: Bot<AdminContext>, steps: StepHandlers, opts:
   const recipients = () => prisma.user.count({ where: { notificationsEnabled: true, botBlocked: false, isBanned: false } });
 
   bot.callbackQuery("bc", async (ctx) => {
-    if (!opts.gameBotToken) return show(ctx, "Рассылка недоступна: не задан BOT_TOKEN игрового бота.", backToMenu());
+    if (!gameApi(opts)) return show(ctx, "Рассылка недоступна: не задан BOT_TOKEN игрового бота.", backToMenu());
     if (broadcastRunning) return show(ctx, "Рассылка уже идёт. Дождитесь отчёта.", backToMenu());
     ctx.session.step = "bc.text";
     await show(ctx, `<b>Рассылка</b>\nПолучат игроки, которые разрешили уведомления: <b>${await recipients()}</b>.\n\nПришлите текст сообщения. Под ним будет кнопка «Открыть игру».\n\n/cancel — отменить`);
@@ -121,12 +122,13 @@ export function registerTools(bot: Bot<AdminContext>, steps: StepHandlers, opts:
   };
   bot.callbackQuery("bc.send", async (ctx) => {
     const text = ctx.session.broadcast;
-    if (!text || !opts.gameBotToken || broadcastRunning) return show(ctx, "Нечего отправлять.", backToMenu());
+    const api = gameApi(opts);
+    if (!text || !api || broadcastRunning) return show(ctx, "Нечего отправлять.", backToMenu());
     ctx.session.broadcast = undefined;
     broadcastRunning = true;
     await show(ctx, "📨 Рассылка началась. Пришлю отчёт, когда закончу.");
     const adminChat = ctx.chat!.id, adminApi = ctx.api, adminId = ctx.from.id;
-    void runBroadcast(new Api(opts.gameBotToken), text, opts.webAppUrl)
+    void runBroadcast(api, text, opts.webAppUrl)
       .then(async (r) => {
         await prisma.adminLog.create({ data: { adminId: BigInt(adminId), action: "broadcast", payload: { ...r, text } } });
         await adminApi.sendMessage(adminChat, `✅ Рассылка завершена.\nДоставлено: ${r.sent}\nЗаблокировали бота: ${r.blocked}\nОшибок: ${r.failed}`, { reply_markup: backToMenu() });

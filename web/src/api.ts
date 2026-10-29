@@ -67,7 +67,7 @@ export type GameState = {
   collection: Record<string, number>;
   progress: { dryStreak: number; unique: number; startedAt: string | null; completedAt: string | null };
   eggs: { freeAvailable: boolean; nextFreeAt: string; grants: { id: number; source: string; label: string; minRarity: Rarity | null }[] };
-  shop: { prices: number[]; used: number; left: number; nextPrice: number | null };
+  shop: { enabled: boolean; prices: number[]; used: number; left: number; nextPrice: number | null };
   ads: { rewarded: boolean; left: number; perDay: number };
   quests: { code: string; title: string; goal: number; shards: number; progress: number; claimed: boolean }[];
   weekEndsAt: string;
