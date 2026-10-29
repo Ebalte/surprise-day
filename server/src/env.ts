@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 
 const bool = z
@@ -16,7 +17,12 @@ const schema = z.object({
   PORT: z.coerce.number().default(3000),
   /// polling — локально, webhook — на сервере, off — бот не запускается (например, в тестах)
   BOT_MODE: z.enum(["polling", "webhook", "off"]).default("polling"),
-  WEBHOOK_SECRET: z.string().optional(),
+  /// Telegram принимает в секрете только A-Z, a-z, 0-9, _ и -, а Render генерирует строку с + / =.
+  /// Поэтому превращаем любую строку в hex — одинаково и для setWebhook, и для проверки входящих запросов.
+  WEBHOOK_SECRET: z
+    .string()
+    .optional()
+    .transform((v) => (v ? createHash("sha256").update(v).digest("hex") : undefined)),
   SESSION_SECRET: z.string().min(16, "SESSION_SECRET — длинная случайная строка"),
   SESSION_TTL_DAYS: z.coerce.number().default(30),
   /// Сколько секунд initData из Mini App считается свежей
