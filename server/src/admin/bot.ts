@@ -26,7 +26,7 @@ export type AdminSession = {
   step?: string;
   ad?: AdDraft;
   settingKey?: string;
-  broadcast?: string;
+  broadcast?: { text: string; media?: import("./tools.js").BroadcastMedia };
 };
 
 export type AdminContext = Context & SessionFlavor<AdminSession>;
@@ -38,6 +38,8 @@ export type AdminBotOptions = {
   gameBotToken?: string;
   /** Для тестов: готовый клиент игрового бота вместо токена */
   gameApi?: Api;
+  /** Для тестов: как скачать файл, присланный админ-боту */
+  downloadFile?: (fileId: string) => Promise<Buffer>;
   webAppUrl?: string;
   /** Для тестов: чтобы бот не ходил в getMe */
   botInfo?: UserFromGetMe;

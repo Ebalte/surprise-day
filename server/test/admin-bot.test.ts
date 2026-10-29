@@ -27,13 +27,19 @@ gameApi.config.use(async (_prev, method, payload) => {
   if ((payload as { telegram_payment_charge_id?: string }).telegram_payment_charge_id === "chg-fail") {
     return { ok: false, error_code: 400, description: "Bad Request: CHARGE_ALREADY_REFUNDED" } as never;
   }
-  return { ok: true, result: method === "createInvoiceLink" ? "https://t.me/$inv" : true } as never;
+  const msg = { message_id: 1, date: 0, chat: { id: 1, type: "private" } };
+  const result = method === "createInvoiceLink" ? "https://t.me/$inv"
+    : method === "sendPhoto" ? { ...msg, photo: [{ file_id: "GAME_PHOTO", file_unique_id: "g", width: 1, height: 1 }] }
+    : method.startsWith("send") ? msg : true;
+  return { ok: true, result } as never;
 });
 
 const bot = createAdminBot({
   token: "123:TEST",
   adminIds: [ADMIN],
   gameApi,
+  webAppUrl: "https://game.example",
+  downloadFile: async () => Buffer.from("fake-image"),
   botInfo: {
     id: 1, is_bot: true, first_name: "Admin", username: "surprise_admin_bot",
     can_join_groups: false, can_read_all_group_messages: false, supports_inline_queries: false,
@@ -76,7 +82,7 @@ const lastText = () => {
 async function cleanup() {
   await prisma.adCampaign.deleteMany({ where: { title: { startsWith: TAG } } });
   await prisma.setting.deleteMany({});
-  await prisma.user.deleteMany({ where: { telegramId: TEST_TG } });
+  await prisma.user.deleteMany({ where: { telegramId: { in: [TEST_TG, TEST_TG + 1n] } } });
   invalidateSettings();
 }
 before(cleanup);
@@ -246,4 +252,30 @@ test("возврат: если Telegram отказал, покупка оста�
   assert.match(lastText(), /Telegram не принял возврат: Bad Request: CHARGE_ALREADY_REFUNDED/);
   assert.equal((await prisma.purchase.findUniqueOrThrow({ where: { id: fail.id } })).refundedAt, null);
   assert.equal(await prisma.eggGrant.count({ where: { dedupeKey: "purchase:chg-fail", usedAt: null } }), 1);
+});
+
+test("рассылка с фото: первому — загрузка файла, остальным — готовый file_id", async () => {
+  await prisma.user.updateMany({ data: { notificationsEnabled: false } });
+  await prisma.user.update({ where: { telegramId: TEST_TG }, data: { notificationsEnabled: true, botBlocked: false } });
+  await prisma.user.create({ data: { telegramId: TEST_TG + 1n, firstName: "Второй", notificationsEnabled: true } });
+
+  await tap("bc");
+  assert.match(lastText(), /текст, фото, видео или GIF/);
+  await send("", ADMIN, { text: undefined, document: { file_id: "doc", file_unique_id: "d" } });
+  assert.match(lastText(), /не поддерживается/);
+  await send("", ADMIN, { text: undefined, caption: "Ролик", video: { file_id: "BIG", file_unique_id: "v", width: 1, height: 1, duration: 1, file_size: 30 * 1024 * 1024 } });
+  assert.match(lastText(), /максимум 20 МБ/);
+  await photo("Новый сезон уже в игре!");
+  assert.ok(calls.some((c) => c.method === "sendPhoto" && c.payload.photo === "BIG_PHOTO" && c.payload.caption === "Новый сезон уже в игре!"), "предпросмотр админу");
+  assert.match(lastText(), /Отправляем\?/);
+
+  const before = gameCalls.length;
+  await tap("bc.send");
+  for (let i = 0; i < 50 && !calls.some((c) => String(c.payload.text ?? "").includes("Рассылка завершена")); i++) await new Promise((r) => setTimeout(r, 50));
+  const photos = gameCalls.slice(before).filter((c) => c.method === "sendPhoto");
+  assert.equal(photos.length, 2);
+  assert.equal(typeof photos[0].payload.photo, "object", "первому — загрузка файла");
+  assert.equal(photos[1].payload.photo, "GAME_PHOTO", "второму — уже загруженный файл");
+  assert.ok(photos.every((c) => c.payload.caption === "Новый сезон уже в игре!"));
+  assert.match(String(calls.findLast((c) => String(c.payload.text ?? "").includes("Рассылка завершена"))?.payload.text), /Доставлено: 2/);
 });
