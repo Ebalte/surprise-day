@@ -39,6 +39,7 @@ const bot = createAdminBot({
   adminIds: [ADMIN],
   gameApi,
   webAppUrl: "https://game.example",
+  gameLink: "https://t.me/tuktuk_egg_bot/tuktuk_egg",
   downloadFile: async () => Buffer.from("fake-image"),
   botInfo: {
     id: 1, is_bot: true, first_name: "Admin", username: "surprise_admin_bot",
@@ -56,6 +57,7 @@ bot.api.config.use(async (_prev, method, payload) => {
 });
 
 let updateId = 1;
+const kb = (c: Call) => (c.payload.reply_markup as { inline_keyboard: unknown[][] } | undefined)?.inline_keyboard[0][0];
 const from = (id: number) => ({ id, is_bot: false, first_name: "Тест" });
 const chat = (id: number) => ({ id, type: "private" as const, first_name: "Тест" });
 async function send(text: string, id = ADMIN, extra: Record<string, unknown> = {}) {
@@ -266,8 +268,29 @@ test("рассылка с фото: первому — загрузка файл
   await send("", ADMIN, { text: undefined, caption: "Ролик", video: { file_id: "BIG", file_unique_id: "v", width: 1, height: 1, duration: 1, file_size: 30 * 1024 * 1024 } });
   assert.match(lastText(), /максимум 20 МБ/);
   await photo("Новый сезон уже в игре!");
-  assert.ok(calls.some((c) => c.method === "sendPhoto" && c.payload.photo === "BIG_PHOTO" && c.payload.caption === "Новый сезон уже в игре!"), "предпросмотр админу");
-  assert.match(lastText(), /Отправляем\?/);
+  const prev = calls.findLast((c) => c.method === "sendPhoto" && c.payload.photo === "BIG_PHOTO");
+  assert.equal(prev?.payload.caption, "Новый сезон уже в игре!", "предпросмотр админу");
+  assert.deepEqual(kb(prev!), { text: "Открыть игру", url: "https://t.me/tuktuk_egg_bot/tuktuk_egg" }, "в предпросмотре — ссылка на Mini App");
+  assert.match(lastText(), /Кнопка: «Открыть игру» → игра в Telegram/);
+
+  // свой текст — кнопка всё ещё ведёт в игру
+  await tap("bc.btntext");
+  await send("Забрать яйцо");
+  assert.match(lastText(), /Кнопка: «Забрать яйцо» → игра в Telegram/);
+  // своя ссылка
+  await tap("bc.btnurl");
+  await send("не ссылка");
+  assert.match(lastText(), /не похоже на ссылку/);
+  await send("t.me/surprise_news");
+  assert.match(lastText(), /Кнопка: «Забрать яйцо» → https:\/\/t\.me\/surprise_news/);
+  assert.deepEqual(kb(calls.findLast((c) => c.method === "sendPhoto")!), { text: "Забрать яйцо", url: "https://t.me/surprise_news" });
+  // без кнопки
+  await tap("bc.nobtn");
+  assert.match(lastText(), /Кнопка: без кнопки/);
+  assert.equal(calls.findLast((c) => c.method === "sendPhoto")!.payload.reply_markup, undefined);
+  // и обратно на игру
+  await tap("bc.btngame");
+  assert.match(lastText(), /Кнопка: «Открыть игру» → игра в Telegram/);
 
   const before = gameCalls.length;
   await tap("bc.send");
@@ -277,5 +300,6 @@ test("рассылка с фото: первому — загрузка файл
   assert.equal(typeof photos[0].payload.photo, "object", "первому — загрузка файла");
   assert.equal(photos[1].payload.photo, "GAME_PHOTO", "второму — уже загруженный файл");
   assert.ok(photos.every((c) => c.payload.caption === "Новый сезон уже в игре!"));
+  assert.deepEqual(kb(photos[0]), { text: "Открыть игру", web_app: { url: "https://game.example" } }, "игрокам — кнопка запуска Mini App внутри Telegram");
   assert.match(String(calls.findLast((c) => String(c.payload.text ?? "").includes("Рассылка завершена"))?.payload.text), /Доставлено: 2/);
 });

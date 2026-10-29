@@ -110,6 +110,22 @@ export function registerTools(bot: Bot<AdminContext>, steps: StepHandlers, opts:
     await show(ctx, `<b>Рассылка</b>\nПолучат игроки, которые разрешили уведомления: <b>${await recipients()}</b>.\n\nПришлите сообщение: текст, фото, видео или GIF с подписью. Под ним будет кнопка «Открыть игру».\n\n/cancel — отменить`);
   });
 
+  const GAME_BUTTON = "Открыть игру";
+  const preview = async (ctx: AdminContext) => {
+    const d = ctx.session.broadcast!;
+    await ctx.reply("Так увидят игроки:");
+    await sendBroadcastMessage(ctx.api, ctx.chat!.id, { text: d.text, media: d.media && { type: d.media.type, file: d.media.fileId } }, toButton(d.button, opts, "preview"));
+    const btn = d.button;
+    const kb = new InlineKeyboard()
+      .text(`📨 Отправить ${await recipients()} игрокам`, "bc.send").row()
+      .text("✏️ Текст кнопки", "bc.btntext").text("🔗 Ссылка кнопки", "bc.btnurl").row();
+    if (!btn || !btn.game) kb.text("🥚 Кнопка на игру", "bc.btngame");
+    if (btn) kb.text("🚫 Без кнопки", "bc.nobtn");
+    kb.row().text("✖ Отмена", "menu");
+    const where = !btn ? "без кнопки" : btn.game ? `«${esc(btn.text)}» → игра в Telegram` : `«${esc(btn.text)}» → ${esc(btn.url!)}`;
+    await ctx.reply(`Кнопка: ${where}\n\nОтправляем?`, { parse_mode: "HTML", reply_markup: kb });
+  };
+
   steps["bc.text"] = async (ctx) => {
     const m = ctx.message!;
     let media: BroadcastMedia | undefined;
@@ -127,12 +143,51 @@ export function registerTools(bot: Bot<AdminContext>, steps: StepHandlers, opts:
     // Bot API отдаёт ботам файлы только до 20 МБ — больше не получится переслать от имени игрового бота
     if (size > MAX_FILE) return void (await ctx.reply(`Файл ${(size / 1048576).toFixed(1)} МБ, а Telegram даёт боту скачать максимум 20 МБ. Сожмите видео и пришлите снова.`));
     ctx.session.step = undefined;
-    ctx.session.broadcast = { text, media };
-    await ctx.reply("Так увидят игроки:");
-    await sendBroadcastMessage(ctx.api, ctx.chat!.id, { text, media: media && { type: media.type, file: media.fileId } }, opts.webAppUrl);
-    const kb = new InlineKeyboard().text(`📨 Отправить ${await recipients()} игрокам`, "bc.send").row().text("✖ Отмена", "menu");
-    await ctx.reply("Отправляем?", { reply_markup: kb });
+    ctx.session.broadcast = { text, media, button: { text: GAME_BUTTON, game: true } };
+    await preview(ctx);
   };
+
+  bot.callbackQuery("bc.btntext", async (ctx) => {
+    if (!ctx.session.broadcast) return show(ctx, "Сначала пришлите сообщение для рассылки.", backToMenu());
+    ctx.session.step = "bc.btntext";
+    await ctx.reply("Пришлите текст кнопки (до 40 символов).\n\n/cancel — отменить");
+  });
+  steps["bc.btntext"] = async (ctx) => {
+    const t = ctx.message?.text?.trim();
+    if (!t || t.startsWith("/")) return void (await ctx.reply("Пришлите текст кнопки."));
+    if (t.length > 40) return void (await ctx.reply(`Длинновато: ${t.length} символов. Максимум 40.`));
+    const d = ctx.session.broadcast!;
+    d.button = { ...(d.button ?? { game: true }), text: t };
+    ctx.session.step = undefined;
+    await preview(ctx);
+  };
+
+  bot.callbackQuery("bc.btnurl", async (ctx) => {
+    if (!ctx.session.broadcast) return show(ctx, "Сначала пришлите сообщение для рассылки.", backToMenu());
+    ctx.session.step = "bc.btnurl";
+    await ctx.reply("Пришлите ссылку для кнопки: https://… или t.me/… Например, на канал, сайт или другого бота.\n\n/cancel — отменить");
+  });
+  steps["bc.btnurl"] = async (ctx) => {
+    const raw = ctx.message?.text?.trim() ?? "";
+    const url = normalizeUrl(raw);
+    if (!url) return void (await ctx.reply("Это не похоже на ссылку. Пример: https://t.me/mychannel"));
+    const d = ctx.session.broadcast!;
+    const keepText = d.button && !(d.button.game && d.button.text === GAME_BUTTON);
+    d.button = { text: keepText ? d.button!.text : "Подробнее", url, game: false };
+    ctx.session.step = undefined;
+    await preview(ctx);
+  };
+
+  bot.callbackQuery("bc.btngame", async (ctx) => {
+    if (!ctx.session.broadcast) return show(ctx, "Сначала пришлите сообщение для рассылки.", backToMenu());
+    ctx.session.broadcast.button = { text: GAME_BUTTON, game: true };
+    await preview(ctx);
+  });
+  bot.callbackQuery("bc.nobtn", async (ctx) => {
+    if (!ctx.session.broadcast) return show(ctx, "Сначала пришлите сообщение для рассылки.", backToMenu());
+    ctx.session.broadcast.button = null;
+    await preview(ctx);
+  });
 
   bot.callbackQuery("bc.send", async (ctx) => {
     const draft = ctx.session.broadcast;
@@ -146,10 +201,10 @@ export function registerTools(bot: Bot<AdminContext>, steps: StepHandlers, opts:
     void (async () => {
       // Файл принадлежит админ-боту: скачиваем один раз и отдаём игровому боту как новый файл
       const media = draft.media ? { type: draft.media.type, file: new InputFile(await download(draft.media.fileId), fileName(draft.media.type)) as InputFile | string } : undefined;
-      return runBroadcast(api, { text: draft.text, media }, opts.webAppUrl);
+      return runBroadcast(api, { text: draft.text, media }, toButton(draft.button, opts, "game-bot"));
     })()
       .then(async (r) => {
-        await prisma.adminLog.create({ data: { adminId: BigInt(adminId), action: "broadcast", payload: { ...r, text: draft.text, media: draft.media?.type ?? null } } });
+        await prisma.adminLog.create({ data: { adminId: BigInt(adminId), action: "broadcast", payload: { ...r, text: draft.text, media: draft.media?.type ?? null, button: draft.button ?? null } } });
         await adminApi.sendMessage(adminChat, `✅ Рассылка завершена.\nДоставлено: ${r.sent}\nЗаблокировали бота: ${r.blocked}\nОшибок: ${r.failed}`, { reply_markup: backToMenu() });
       })
       .catch((e) => adminApi.sendMessage(adminChat, `Рассылка прервалась: ${e instanceof GrammyError ? e.description : String(e)}`))
@@ -159,8 +214,34 @@ export function registerTools(bot: Bot<AdminContext>, steps: StepHandlers, opts:
 
 const MAX_FILE = 20 * 1024 * 1024;
 export type BroadcastMedia = { type: "photo" | "video" | "animation"; fileId: string };
+/** game: кнопка открывает игру внутри Telegram; иначе — обычная ссылка url */
+export type BroadcastButton = { text: string; game: boolean; url?: string };
+export type BroadcastDraft = { text: string; media?: BroadcastMedia; button: BroadcastButton | null };
 type OutMessage = { text: string; media?: { type: BroadcastMedia["type"]; file: InputFile | string } };
 const fileName = (t: BroadcastMedia["type"]) => (t === "photo" ? "photo.jpg" : "video.mp4");
+
+function normalizeUrl(raw: string): string | null {
+  const s = /^t\.me\//i.test(raw) ? `https://${raw}` : raw;
+  try {
+    const u = new URL(s);
+    return u.protocol === "https:" || u.protocol === "http:" ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Кнопка под сообщением. Кнопка «на игру»:
+ * - от игрового бота — web_app: игра открывается внутри Telegram сразу, без браузера;
+ * - в предпросмотре у админ-бота — t.me-ссылка на Mini App (web_app-кнопка там открыла бы игру от имени чужого бота).
+ */
+function toButton(b: BroadcastButton | null, opts: AdminBotOptions, sender: "game-bot" | "preview"): InlineKeyboard | undefined {
+  if (!b) return undefined;
+  if (!b.game) return new InlineKeyboard().url(b.text, b.url!);
+  if (sender === "game-bot" && opts.webAppUrl?.startsWith("https://")) return new InlineKeyboard().webApp(b.text, opts.webAppUrl);
+  const link = opts.gameLink ?? opts.webAppUrl;
+  return link ? new InlineKeyboard().url(b.text, link) : undefined;
+}
 
 async function downloadFromTelegram(api: Api, token: string, fileId: string) {
   const f = await api.getFile(fileId);
@@ -171,8 +252,7 @@ async function downloadFromTelegram(api: Api, token: string, fileId: string) {
 }
 
 /** Одно сообщение рассылки. Возвращает file_id, который Telegram присвоил загруженному файлу. */
-async function sendBroadcastMessage(api: Api, chatId: number, msg: OutMessage, webAppUrl?: string) {
-  const reply_markup = webAppUrl ? new InlineKeyboard().url("Открыть игру", webAppUrl) : undefined;
+async function sendBroadcastMessage(api: Api, chatId: number, msg: OutMessage, reply_markup?: InlineKeyboard) {
   const caption = msg.text || undefined;
   if (!msg.media) { await api.sendMessage(chatId, msg.text, { reply_markup }); return undefined; }
   const { type, file } = msg.media;
@@ -183,7 +263,7 @@ async function sendBroadcastMessage(api: Api, chatId: number, msg: OutMessage, w
 }
 
 /** Шлёт сообщение всем, кто разрешил уведомления. ~25 сообщений в секунду — в пределах лимита Telegram. */
-export async function runBroadcast(api: Api, msg: OutMessage | string, webAppUrl?: string) {
+export async function runBroadcast(api: Api, msg: OutMessage | string, keyboard?: InlineKeyboard) {
   const out: OutMessage = typeof msg === "string" ? { text: msg } : { ...msg, media: msg.media && { ...msg.media } };
   const r = { sent: 0, blocked: 0, failed: 0 };
   let cursor = 0;
@@ -197,7 +277,7 @@ export async function runBroadcast(api: Api, msg: OutMessage | string, webAppUrl
       cursor = u.id;
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          const fileId = await sendBroadcastMessage(api, Number(u.telegramId), out, webAppUrl);
+          const fileId = await sendBroadcastMessage(api, Number(u.telegramId), out, keyboard);
           // После первой успешной загрузки остальным шлём уже готовый файл по file_id — без повторной загрузки
           if (out.media && fileId && typeof out.media.file !== "string") out.media.file = fileId;
           r.sent++;

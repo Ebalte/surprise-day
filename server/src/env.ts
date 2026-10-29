@@ -52,5 +52,9 @@ export function env(): Env {
   return cached;
 }
 
+/** Ссылка, которая открывает игру внутри Telegram (Mini App). Без short name — просто сайт. */
+export const gameLink = (e: Pick<Env, "BOT_USERNAME" | "MINI_APP_SHORT_NAME" | "WEB_APP_URL">) =>
+  e.BOT_USERNAME && e.MINI_APP_SHORT_NAME ? `https://t.me/${e.BOT_USERNAME}/${e.MINI_APP_SHORT_NAME}` : e.WEB_APP_URL;
+
 export const adminIds = (e: Env) =>
   (e.ADMIN_IDS ?? "").split(/[\s,]+/).filter(Boolean).map(Number).filter(Number.isInteger);

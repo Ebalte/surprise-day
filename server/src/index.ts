@@ -1,7 +1,7 @@
 /**
  * Точка входа: HTTP API + игровой бот + напоминания + (по желанию) админ-бот в одном процессе.
  */
-import { env, adminIds } from "./env.js";
+import { env, adminIds, gameLink } from "./env.js";
 import { prisma } from "./db.js";
 import { buildApp } from "./http/app.js";
 import { createGameBot, notifyEggReady } from "./bot/game-bot.js";
@@ -43,7 +43,7 @@ if (e.BOT_MODE !== "off") {
 
 const runAdmin = e.ADMIN_BOT_TOKEN && adminIds(e).length && e.RUN_ADMIN_BOT !== "false";
 const admin = runAdmin
-  ? createAdminBot({ token: e.ADMIN_BOT_TOKEN!, adminIds: adminIds(e), gameBotToken: e.BOT_TOKEN, webAppUrl: e.WEB_APP_URL })
+  ? createAdminBot({ token: e.ADMIN_BOT_TOKEN!, adminIds: adminIds(e), gameBotToken: e.BOT_TOKEN, webAppUrl: e.WEB_APP_URL, gameLink: gameLink(e) })
   : null;
 if (admin) {
   await admin.api.deleteWebhook();

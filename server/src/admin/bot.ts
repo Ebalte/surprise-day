@@ -26,7 +26,7 @@ export type AdminSession = {
   step?: string;
   ad?: AdDraft;
   settingKey?: string;
-  broadcast?: { text: string; media?: import("./tools.js").BroadcastMedia };
+  broadcast?: import("./tools.js").BroadcastDraft;
 };
 
 export type AdminContext = Context & SessionFlavor<AdminSession>;
@@ -41,6 +41,8 @@ export type AdminBotOptions = {
   /** Для тестов: как скачать файл, присланный админ-боту */
   downloadFile?: (fileId: string) => Promise<Buffer>;
   webAppUrl?: string;
+  /** t.me-ссылка на Mini App: открывает игру внутри Telegram из любого чата (в т. ч. из админ-бота) */
+  gameLink?: string;
   /** Для тестов: чтобы бот не ходил в getMe */
   botInfo?: UserFromGetMe;
 };

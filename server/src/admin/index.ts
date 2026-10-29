@@ -16,6 +16,8 @@ const bot = createAdminBot({
   adminIds,
   gameBotToken: process.env.BOT_TOKEN,
   webAppUrl: process.env.WEB_APP_URL,
+  gameLink: process.env.BOT_USERNAME && process.env.MINI_APP_SHORT_NAME
+    ? `https://t.me/${process.env.BOT_USERNAME}/${process.env.MINI_APP_SHORT_NAME}` : process.env.WEB_APP_URL,
 });
 
 await bot.api.setMyCommands([
