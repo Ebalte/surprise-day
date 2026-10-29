@@ -1,0 +1,36 @@
+# Render Blueprint: сервер игры + игровой бот + админ-бот в одном бесплатном сервисе.
+# Render → New → Blueprint → выберите этот репозиторий. Переменные с sync: false Render спросит при создании.
+services:
+  - type: web
+    name: surprise-day-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: .
+    buildCommand: npm ci && npm run build -w server && npm run db:deploy -w server && npm run db:sync-seasons:prod -w server
+    startCommand: npm run start -w server
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL        # строка подключения Neon (postgresql://...?sslmode=require)
+        sync: false
+      - key: BOT_TOKEN           # токен игрового бота
+        sync: false
+      - key: BOT_USERNAME        # username игрового бота без @
+        sync: false
+      - key: MINI_APP_SHORT_NAME # short name из /newapp, например egg
+        sync: false
+      - key: WEB_APP_URL         # https://<логин>.github.io/<репозиторий>/
+        sync: false
+      - key: ADMIN_BOT_TOKEN     # токен админ-бота
+        sync: false
+      - key: ADMIN_IDS           # ваш Telegram ID (через запятую, если админов несколько)
+        sync: false
+      - key: BOT_MODE
+        value: webhook
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true

@@ -1,0 +1,96 @@
+{
+  "$schema": "./season.schema.json",
+  "slug": "season1",
+  "number": 1,
+  "title": "Сезон 1: Лесные друзья",
+  "startsAt": "2026-01-01T00:00:00Z",
+  "endsAt": null,
+  "isActive": true,
+
+  "rules": {
+    "rarities": {
+      "common":    { "weight": 60, "shards": 1 },
+      "rare":      { "weight": 28, "shards": 3 },
+      "epic":      { "weight": 10, "shards": 8 },
+      "legendary": { "weight": 2,  "shards": 20 }
+    },
+    "pityThreshold": 10,
+    "pityHintFrom": 3,
+    "craftCosts": { "common": 30, "rare": 60, "epic": 120 },
+    "streakFreezesPerWeek": 1,
+    "trading": {
+      "giftsPerDay": 3,
+      "tradeableRarities": ["common", "rare", "epic"],
+      "offerTtlHours": 48
+    },
+    "shop": {
+      "eggPricesStars": [25, 50, 100],
+      "adEggsPerDay": 1
+    },
+    "quests": [
+      { "code": "eggs",   "title": "Открыть 5 яиц",          "event": "egg_opened",   "goal": 5, "shards": 10 },
+      { "code": "news",   "title": "Найти 2 новые фигурки",  "event": "new_figure",   "goal": 2, "shards": 8 },
+      { "code": "gifts",  "title": "Подарить фигурку другу", "event": "gift_sent",    "goal": 1, "shards": 5 },
+      { "code": "trades", "title": "Обменяться с другом",    "event": "trade_done",   "goal": 1, "shards": 10 }
+    ]
+  },
+
+  "album": {
+    "rows": [
+      { "figures": ["fox", "hedgehog", "bunny", "squirrel"], "reward": { "type": "egg" } },
+      { "figures": ["frog", "mouse", "duck", "snail"],       "reward": { "type": "egg" } },
+      { "figures": ["owl", "bear", "raccoon", "deer"],       "reward": { "type": "egg", "minRarity": "rare" } },
+      { "figures": ["badger", "wolf", "lynx", "firebird"],   "reward": { "type": "shards", "amount": 20 } }
+    ],
+    "sets": [
+      { "code": "commons", "title": "Все обычные",   "rarity": "common", "frame": { "code": "frame_forest",   "title": "Лесная рамка",     "color": "#5E8A6E" } },
+      { "code": "rares",   "title": "Все редкие",    "rarity": "rare",   "frame": { "code": "frame_sapphire", "title": "Сапфировая рамка", "color": "#2F74E0" } },
+      { "code": "all",     "title": "Вся коллекция",                     "frame": { "code": "frame_gold",     "title": "Золотая рамка",    "color": "#D19300" } }
+    ]
+  },
+
+  "badge": {
+    "code": "collector_season1",
+    "title": "Коллекционер сезона 1",
+    "icon": "/badges/collector_season1.svg"
+  },
+
+  "figures": [
+    { "code": "fox",       "name": "Лисёнок Рыжик",     "rarity": "common",    "image": "/figures/season1/fox.svg",       "description": "Любит прятаться в листьях." },
+    { "code": "hedgehog",  "name": "Ёжик Колючка",      "rarity": "common",    "image": "/figures/season1/hedgehog.svg",  "description": "Носит на спине яблоко." },
+    { "code": "bunny",     "name": "Зайка Пуша",        "rarity": "common",    "image": "/figures/season1/bunny.svg",     "description": "Быстрее всех в лесу." },
+    { "code": "squirrel",  "name": "Белочка Шишка",     "rarity": "common",    "image": "/figures/season1/squirrel.svg",  "description": "Хранит орехи на зиму." },
+    { "code": "frog",      "name": "Лягушонок Квак",    "rarity": "common",    "image": "/figures/season1/frog.svg",      "description": "Поёт по вечерам." },
+    { "code": "mouse",     "name": "Мышонок Сырок",     "rarity": "common",    "image": "/figures/season1/mouse.svg",     "description": "Маленький, но храбрый." },
+    { "code": "duck",      "name": "Утёнок Плюх",       "rarity": "common",    "image": "/figures/season1/duck.svg",      "description": "Обожает лужи." },
+    { "code": "snail",     "name": "Улитка Тихоня",     "rarity": "common",    "image": "/figures/season1/snail.svg",     "description": "Никуда не спешит." },
+
+    { "code": "owl",       "name": "Сова Мудрёна",      "rarity": "rare",      "image": "/figures/season1/owl.svg",       "description": "Знает все тайны леса." },
+    { "code": "bear",      "name": "Мишка Топтыжка",    "rarity": "rare",      "image": "/figures/season1/bear.svg",      "description": "Сладкоежка со стажем." },
+    { "code": "raccoon",   "name": "Енот Полоскун",     "rarity": "rare",      "image": "/figures/season1/raccoon.svg",   "description": "Всё моет до блеска." },
+    { "code": "deer",      "name": "Оленёнок Искра",    "rarity": "rare",      "image": "/figures/season1/deer.svg",      "description": "Пятнышки светятся в темноте." },
+    { "code": "badger",    "name": "Барсук Копуша",     "rarity": "rare",      "image": "/figures/season1/badger.svg",    "description": "Роет самые глубокие норы." },
+
+    { "code": "wolf",      "name": "Волчонок Лунный",   "rarity": "epic",      "image": "/figures/season1/wolf.svg",      "description": "Воет только на полную луну." },
+    { "code": "lynx",      "name": "Рысь Кисточка",     "rarity": "epic",      "image": "/figures/season1/lynx.svg",      "description": "Неслышно ходит по ветвям." },
+
+    { "code": "firebird",  "name": "Жар-птица",         "rarity": "legendary", "image": "/figures/season1/firebird.svg",  "description": "Говорят, её видели лишь однажды." }
+  ],
+
+  "events": [
+    {
+      "slug": "fireflies",
+      "title": "Ночь светлячков",
+      "startsAt": "2026-11-01T00:00:00Z",
+      "endsAt": "2026-11-08T00:00:00Z",
+      "dropChance": 0.25,
+      "badge": { "code": "event_fireflies", "title": "Светлячок", "icon": "/badges/event_fireflies.svg" },
+      "reward": { "type": "egg" },
+      "figures": [
+        { "code": "firefly",  "name": "Светлячок Искорка", "rarity": "common", "image": "/figures/season1/events/firefly.svg",  "description": "Освещает тропинки после заката." },
+        { "code": "moth",     "name": "Мотылёк Пыльца",    "rarity": "rare",   "image": "/figures/season1/events/moth.svg",     "description": "Летит на свет любого фонарика." },
+        { "code": "mushroom", "name": "Грибок Боровик",    "rarity": "epic",   "image": "/figures/season1/events/mushroom.svg", "description": "Растёт только в ночь светлячков." }
+      ]
+    }
+  ]
+}
