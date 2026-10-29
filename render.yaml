@@ -14,19 +14,19 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22"
-      - key: DATABASE_URL        # строка подключения Neon (postgresql://...?sslmode=require)
+      - key: DATABASE_URL   postgresql://neondb_owner:npg_WZoNfsjR1D6Q@ep-red-sunset-za3yy2lx.c-2.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require # строка подключения Neon (postgresql://...?sslmode=require)
         sync: false
-      - key: BOT_TOKEN           # токен игрового бота
+      - key: BOT_TOKEN  9007606068:AAHuAvmLJZ7Jl4T532LOX4k8BGNDNsyDHpk
         sync: false
-      - key: BOT_USERNAME        # username игрового бота без @
+      - key: BOT_USERNAME tuktuk_egg_bot
         sync: false
-      - key: MINI_APP_SHORT_NAME # short name из /newapp, например egg
+      - key: MINI_APP_SHORT_NAME tuktuk_egg
         sync: false
-      - key: WEB_APP_URL         # https://<логин>.github.io/<репозиторий>/
+      - key: WEB_APP_URL  https://ebalte.github.io/surprise-day/
         sync: false
-      - key: ADMIN_BOT_TOKEN     # токен админ-бота
+      - key: ADMIN_BOT_TOKEN 9214330815:AAHptWm6Vxlxz2l2z6PtkCroQTzaH71-apA
         sync: false
-      - key: ADMIN_IDS           # ваш Telegram ID (через запятую, если админов несколько)
+      - key: ADMIN_IDS 5086271521
         sync: false
       - key: BOT_MODE
         value: webhook
