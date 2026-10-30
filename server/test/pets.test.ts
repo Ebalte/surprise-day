@@ -100,3 +100,17 @@ test("мини-игра: энергия при старте, очки огран
   await prisma.pet.updateMany({ where: { userId: u.id }, data: { energy: 5 } });
   assert.equal((await call(4, "POST", "/api/games/start", { game: "asmr" })).status, 400);
 });
+
+test("сторис: загрузка JPEG и публичная ссылка без входа", async () => {
+  await call(5, "GET", "/api/state");
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(100, 1)]);
+  const up = await call(5, "POST", "/api/stories", { image: `data:image/jpeg;base64,${jpeg.toString("base64")}` });
+  assert.equal(up.status, 200);
+  const r = await app.inject({ method: "GET", url: up.body.url });
+  assert.equal(r.statusCode, 200);
+  assert.equal(r.headers["content-type"], "image/jpeg");
+  assert.deepEqual(r.rawPayload, jpeg);
+  assert.equal((await call(5, "POST", "/api/stories", { image: "data:image/png;base64,AAAA" })).status, 400);
+  assert.equal((await app.inject({ method: "GET", url: "/api/stories/../../etc.jpg" })).statusCode, 404);
+  assert.equal((await app.inject({ method: "POST", url: "/api/stories", payload: { image: "x" } })).statusCode, 401);
+});

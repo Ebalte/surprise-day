@@ -3,10 +3,9 @@
  * Сервер выдаёт runId при старте (и списывает энергию), а при финише сам ограничивает очки по времени.
  */
 import { useEffect, useRef, useState } from "react";
-import { post, type ApiError, type FigureDto, type PetAction } from "../api";
+import { API_URL, post, type ApiError, type FigureDto, type PetAction } from "../api";
 import { useGame } from "../ui";
 import { canShareStory, haptic, shareLink, shareStory, useBackButton } from "../tg";
-import { asset } from "../util";
 import { PetArt, petImage } from "./art";
 
 export const GAMES = [
@@ -119,18 +118,29 @@ export function GameRunner({ game, pet, level, onClose }: { game: GameId; pet: F
 // ---------------------------------------------------------------- сторис
 
 function StorySheet({ game, score, record, pet, level, onClose }: { game: (typeof GAMES)[number]; score: number; record: boolean; pet: FigureDto; level: number; onClose: () => void }) {
-  const { state: s } = useGame();
+  const { state: s, toast } = useGame();
   const [url, setUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const bot = /t\.me\/([^/?]+)/.exec(s.refLink)?.[1];
   useEffect(() => useBackButton(onClose), [onClose]);
-  useEffect(() => { void storyCard(game, score, record, pet, level).then(setUrl); }, []);
+  useEffect(() => { void storyCard(game, score, record, pet, level, bot).then(setUrl); }, []);
   const text = `${game.emoji} ${record ? "Мой рекорд" : "Мой результат"} в «${game.name}»: ${score}! Сможешь больше?`;
+  // Telegram берёт картинку сторис по ссылке, поэтому сначала кладём именно эту карточку на сервер
+  const publish = async () => {
+    if (!url) return;
+    setBusy(true);
+    try {
+      const r = await post<{ url: string }>("/api/stories", { image: url });
+      shareStory(API_URL + r.url, text, { url: s.refLink, name: "Играть" });
+    } catch (e) { toast((e as ApiError).message); } finally { setBusy(false); }
+  };
   return (
     <div className="sheet-wrap" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="sheet" role="dialog" aria-modal="true">
         <h2>Сторис готова</h2>
         <div className="story">{url ? <img src={url} alt={`Картинка результата: ${score} очков`} /> : <div className="spinner" />}</div>
         {canShareStory()
-          ? <button className="btn" onClick={() => shareStory(new URL(asset(`/stories/${game.id}.png`), location.href).href, `${text} ${s.refLink}`)}>Опубликовать в сторис</button>
+          ? <button className="btn" disabled={!url || busy} onClick={() => void publish()}>{busy ? "Готовим сторис…" : "Опубликовать в сторис"}</button>
           : <p className="muted">Нажмите на картинку и удерживайте, чтобы сохранить её и выложить в сторис.</p>}
         <button className="btn ghost" onClick={() => shareLink(s.refLink, text)}>Отправить другу</button>
         <button className="btn ghost" onClick={onClose}>Закрыть</button>
@@ -139,22 +149,25 @@ function StorySheet({ game, score, record, pet, level, onClose }: { game: (typeo
   );
 }
 
-async function storyCard(game: (typeof GAMES)[number], score: number, record: boolean, pet: FigureDto, level: number) {
-  const cv = document.createElement("canvas"); cv.width = 720; cv.height = 1280;
+/** Карточка 9:16 (JPEG): питомец, счёт и куда идти играть */
+async function storyCard(game: (typeof GAMES)[number], score: number, record: boolean, pet: FigureDto, level: number, bot?: string) {
+  const cv = document.createElement("canvas"); cv.width = 1080; cv.height = 1920;
   const c = cv.getContext("2d")!, img = await petImage(pet, "happy", level);
+  c.scale(1.5, 1.5);
   const bg = c.createLinearGradient(0, 0, 720, 1280); bg.addColorStop(0, "#FF7A1A"); bg.addColorStop(0.55, "#FF5E9A"); bg.addColorStop(1, "#8B5CF6");
   c.fillStyle = bg; c.fillRect(0, 0, 720, 1280);
   c.fillStyle = "rgba(255,255,255,.12)";
   for (let i = 0; i < 26; i++) { c.beginPath(); c.arc((i * 137) % 720, (i * 211) % 1280, 10 + (i % 5) * 9, 0, 7); c.fill(); }
   c.textAlign = "center"; c.fillStyle = "#fff";
-  c.font = "800 44px Unbounded, system-ui"; c.fillText("Сюрприз дня", 360, 130);
-  c.font = "700 34px Nunito, system-ui"; c.fillText(`${game.emoji} ${game.name}`, 360, 200);
-  if (img) c.drawImage(img, 160, 260, 400, 400);
-  c.font = "800 190px Unbounded, system-ui"; c.fillText(String(score), 360, 880);
-  c.font = "800 38px Nunito, system-ui"; c.fillText(record ? "Мой новый рекорд!" : "очков", 360, 950);
-  c.fillStyle = "#fff"; c.beginPath(); c.roundRect(110, 1060, 500, 100, 50); c.fill();
-  c.fillStyle = "#FF5E9A"; c.font = "800 38px Nunito, system-ui"; c.fillText("Сможешь больше?", 360, 1123);
-  return cv.toDataURL("image/png");
+  c.font = "800 44px Unbounded, system-ui"; c.fillText("Сюрприз дня", 360, 150);
+  c.font = "700 34px Nunito, system-ui"; c.fillText(`${game.emoji} ${game.name}`, 360, 215);
+  if (img) c.drawImage(img, 170, 270, 380, 380);
+  c.font = "800 190px Unbounded, system-ui"; c.fillText(String(score), 360, 870);
+  c.font = "800 38px Nunito, system-ui"; c.fillText(record ? "Мой новый рекорд!" : "очков", 360, 940);
+  c.font = "800 52px Unbounded, system-ui"; c.fillText("Сможешь больше?", 360, 1060);
+  // Внизу место под кнопку-ссылку Telegram, поэтому только подсказка, где искать игру
+  if (bot) { c.font = "700 32px Nunito, system-ui"; c.globalAlpha = 0.9; c.fillText(`Играй в Telegram: @${bot}`, 360, 1125); c.globalAlpha = 1; }
+  return cv.toDataURL("image/jpeg", 0.86);
 }
 
 // ---------------------------------------------------------------- башня вкусняшек

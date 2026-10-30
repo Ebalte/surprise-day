@@ -16,6 +16,7 @@ import { GameError, craftFigure, openEgg } from "../game/core.js";
 import { claimGift, displayName, friendsView, proposeTrade, respondTrade, sendGift, upsertTgUser } from "../game/social.js";
 import { claimQuest, gameState, leaderboard, setFrame } from "../game/state.js";
 import { createEggInvoice } from "../game/shop.js";
+import { loadStory, saveStory } from "../game/stories.js";
 import { FOOD, GAMES, buyFood, feedPet, finishGame, patPet, setActivePet, sleepPet, startGame, washPet, type FoodKey } from "../game/pets.js";
 import { getFlag } from "../settings/service.js";
 import { AdError, completeAdView, fetchAdMedia, pickAd, publicAd, registerAdClick, startAdView } from "../ads/service.js";
@@ -64,7 +65,7 @@ export function buildApp({ env, botApi, bot }: AppDeps) {
   const open = new Set(["/api/auth/widget", "/health"]);
   app.addHook("preHandler", async (req) => {
     const path = req.routeOptions.url ?? "";
-    if (!path.startsWith("/api/") || open.has(path) || path.startsWith("/api/ads/:id/media")) return;
+    if (!path.startsWith("/api/") || open.has(path) || path.startsWith("/api/ads/:id/media") || path === "/api/stories/:file") return;
     await authenticate(req);
   });
   const notInMaintenance = async () => {
@@ -148,6 +149,16 @@ export function buildApp({ env, botApi, bot }: AppDeps) {
   app.post("/api/pet/sleep", async (req) => { await notInMaintenance(); return sleepPet(req.user.id, body(z.object({ asleep: z.boolean() }), req).asleep); });
   app.post("/api/games/start", async (req) => { await notInMaintenance(); return startGame(req.user.id, body(z.object({ game: z.enum(GAMES) }), req).game); });
   app.post("/api/games/:id/finish", async (req) => finishGame(req.user.id, id(req), body(z.object({ score: z.number().int().min(0).max(100000) }), req).score));
+
+  // Картинка сторис: загрузка игроком и публичная раздача для Telegram
+  app.post("/api/stories", { bodyLimit: 2_500_000 }, async (req) => saveStory(req.user.id, body(z.object({ image: z.string().max(2_400_000) }), req).image));
+  app.get("/api/stories/:file", async (req, reply: FastifyReply) => {
+    const story = await loadStory(((req.params as { file: string }).file).replace(/\.jpg$/, ""));
+    if (!story) return reply.status(404).send();
+    reply.header("Content-Type", "image/jpeg");
+    reply.header("Cache-Control", "public, max-age=86400");
+    return reply.send(Buffer.from(story.data));
+  });
 
   // ---------- магазин (Stars) ----------
   app.post("/api/shop/invoice", async (req) => {

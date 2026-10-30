@@ -173,6 +173,7 @@ model User {
   purchases      Purchase[]
   pets           Pet[]
   gameRuns       GameRun[]
+  stories        StoryImage[]
 
   @@index([notificationsEnabled, lastFreeEggAt])
   @@map("users")
@@ -526,4 +527,18 @@ model GameRun {
 
   @@index([userId, startedAt])
   @@map("game_runs")
+}
+
+/// Картинка для сторис: Telegram берёт её по публичной https-ссылке. Хранится 3 дня.
+model StoryImage {
+  id        String   @id
+  userId    Int
+  data      Bytes
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("story_images")
 }

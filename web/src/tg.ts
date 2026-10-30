@@ -9,7 +9,7 @@ type Haptic = {
 };
 type WebApp = {
   initData: string;
-  initDataUnsafe: { start_param?: string; user?: { id: number; first_name?: string } };
+  initDataUnsafe: { start_param?: string; user?: { id: number; first_name?: string; is_premium?: boolean } };
   version: string;
   platform: string;
   colorScheme: "light" | "dark";
@@ -26,7 +26,7 @@ type WebApp = {
   openTelegramLink(url: string): void;
   openInvoice(url: string, cb: (status: "paid" | "cancelled" | "failed" | "pending") => void): void;
   requestWriteAccess(cb: (granted: boolean) => void): void;
-  shareToStory?(mediaUrl: string, params?: { text?: string }): void;
+  shareToStory?(mediaUrl: string, params?: { text?: string; widget_link?: { url: string; name?: string } }): void;
   HapticFeedback: Haptic;
   BackButton: { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void };
 };
@@ -72,8 +72,13 @@ export const haptic = {
 
 /** Публикация в сторис Telegram (с версии 7.8). mediaUrl — публичная https-картинка. */
 export const canShareStory = () => inTelegram && supports("7.8") && !!wa!.shareToStory;
-export function shareStory(mediaUrl: string, text: string) {
-  wa!.shareToStory!(mediaUrl, { text: text.slice(0, 200) });
+/**
+ * Кнопка-ссылка прямо на сторис (widget_link) доступна только с Telegram Premium.
+ * Без Premium ссылка идёт в подпись: подпись ограничена 200 символами.
+ */
+export function shareStory(mediaUrl: string, text: string, link: { url: string; name: string }) {
+  if (wa!.initDataUnsafe.user?.is_premium) wa!.shareToStory!(mediaUrl, { text: text.slice(0, 2048), widget_link: link });
+  else wa!.shareToStory!(mediaUrl, { text: `${text} ${link.url}`.slice(0, 200) });
 }
 
 export function openLink(url: string) {
