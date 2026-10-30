@@ -75,7 +75,18 @@ export type GameState = {
   badges: { code: string; title: string; icon: string | null; awardedAt: string }[];
   frames: { code: string; title: string; color: string | null }[];
   refLink: string;
+  pet: PetState;
 };
+
+export type PetDto = { code: string; level: number; xp: number; needXp: number; food: number; mood: number; clean: number; energy: number; asleep: boolean; ageMs: number; stage: number; active: boolean };
+export type PetStage = { fromDays: number; name: string; emoji: string; scale: number; mult: number };
+export type FoodDto = { emoji: string; name: string; price: number; food: number; mood: number; toy: boolean };
+export type PetState = {
+  active: string | null; coins: number; food: Record<string, number>; gameBest: Record<string, number>; gamesPlayed: number;
+  pets: PetDto[]; config: { stages: PetStage[]; foods: Record<string, FoodDto>; energyCost: number };
+};
+/** Ответ на действие с питомцем: обновлённый питомец и сообщения (новый уровень, подрос) */
+export type PetAction<T = object> = { result: T; pet: PetDto; messages: string[] };
 
 export type OpenResult = {
   figure: FigureDto; isNew: boolean; count: number; shards: number; pity: boolean;

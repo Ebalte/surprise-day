@@ -3,11 +3,16 @@ import { api, logout, post, type ApiError } from "../api";
 import { useGame } from "../ui";
 import { asset, dur } from "../util";
 import { inTelegram, requestWriteAccess } from "../tg";
+import { PetArt } from "../pet/art";
+import { GAMES } from "../pet/games";
+import { ageText, livePet } from "./PetScreen";
 
 type Row = { place: number; name: string; ms: number; you: boolean };
 
 export function ProfileScreen() {
-  const { state: s, refresh, toast } = useGame();
+  const { state: s, refresh, toast, now } = useGame();
+  const pet = livePet(s, now()), petFig = s.season.figures.find((f) => f.code === s.pet.active);
+  const paused = s.pet.pets.filter((p) => p.code !== s.pet.active).length;
   const [lb, setLb] = useState<Row[] | null>(null);
   useEffect(() => { api<Row[]>("/api/leaderboard").then(setLb).catch(() => setLb([])); }, []);
   const st = s.me.streak, wk = st === 0 ? 0 : st % 7 === 0 ? 7 : st % 7;
@@ -50,6 +55,24 @@ export function ProfileScreen() {
         <div className="stat"><b>{s.me.bestStreak}</b><span>Лучшая серия</span></div>
         <div className="stat"><b>{s.me.shards}</b><span>Осколки</span></div>
         <div className="stat"><b>{s.me.totalEggs}</b><span>Открыто яиц</span></div>
+      </div>
+
+      <div className="panel">
+        <h2>Питомец</h2>
+        {pet && petFig ? (
+          <>
+            <a className="pet-mini" href="#pet" style={{ color: "inherit", textDecoration: "none" }}>
+              <PetArt f={petFig} expr="happy" level={pet.level} />
+              <span><b>{petFig.name}</b><br /><span className="muted">{s.pet.config.stages[pet.stage].emoji} {s.pet.config.stages[pet.stage].name} · {ageText(pet.ageMs)} · уровень {pet.level}</span></span>
+            </a>
+            <div className="stats">
+              <div className="stat"><b>{s.pet.coins}</b><span>Монеты</span></div>
+              <div className="stat"><b>{s.pet.gamesPlayed}</b><span>Сыграно игр</span></div>
+            </div>
+            {GAMES.map((g) => <div key={g.id} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><span>{g.emoji} {g.name}</span><b className="num">{s.pet.gameBest[g.id] ?? "—"}</b></div>)}
+            {paused > 0 && <p className="muted">Ещё {paused} на паузе. Сменить главного питомца можно в «Коллекции».</p>}
+          </>
+        ) : <p className="muted">Откройте яйцо: первая фигурка станет вашим питомцем.</p>}
       </div>
 
       <div className="panel">

@@ -297,6 +297,11 @@ export async function openEgg(userId: number, now = new Date()) {
     const owned = await ownedMap(tx, userId, ctx.season.id);
     const figure = roll(ctx, owned, minRarity, pity, now);
     const dupShards = owned.get(figure.code) ? ctx.rules.rarities[rk(figure.rarity)]?.shards ?? 0 : 0;
+    // Первая фигурка сразу становится питомцем
+    if (!user.activePet) {
+      userUpdate.activePet = figure.code;
+      await tx.pet.upsert({ where: { userId_figureCode: { userId, figureCode: figure.code } }, create: { userId, figureCode: figure.code, last: now, activeSince: now }, update: { last: now, activeSince: now } });
+    }
 
     await tx.user.update({ where: { id: userId }, data: userUpdate });
     const give = await giveFigure(tx, ctx, userId, figure, source, { shardsDelta: dupShards, pity: pity && !owned.get(figure.code), fromEgg: true, now });

@@ -7,15 +7,17 @@ import { EggScreen } from "./screens/EggScreen";
 import { CollectionScreen } from "./screens/CollectionScreen";
 import { FriendsScreen } from "./screens/FriendsScreen";
 import { ProfileScreen } from "./screens/ProfileScreen";
+import { PetScreen, livePet, needsCare } from "./screens/PetScreen";
 
 const TABS = [
+  { id: "pet", label: "Питомец", icon: <><path d="M3 11.5 12 4l9 7.5" /><path d="M5.5 10v10h13V10" /><path d="M12 17.5s-3-1.8-3-3.6a1.6 1.6 0 0 1 3-.8 1.6 1.6 0 0 1 3 .8c0 1.8-3 3.6-3 3.6z" /></> },
   { id: "egg", label: "Яйцо", icon: <path d="M12 3c3.6 0 6.5 5.2 6.5 9.6A6.5 6.5 0 0 1 5.5 12.6C5.5 8.2 8.4 3 12 3z" /> },
   { id: "collection", label: "Коллекция", icon: <><rect x="4" y="4" width="7" height="7" rx="2" /><rect x="13" y="4" width="7" height="7" rx="2" /><rect x="4" y="13" width="7" height="7" rx="2" /><rect x="13" y="13" width="7" height="7" rx="2" /></> },
   { id: "friends", label: "Друзья", icon: <><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5" /><circle cx="17" cy="9" r="2.6" /><path d="M16.5 14.6c2.4.2 4.3 1.8 5 4.6" /></> },
   { id: "profile", label: "Профиль", icon: <><circle cx="12" cy="8" r="4" /><path d="M4 21c1-4.2 4.2-6.5 8-6.5s7 2.3 8 6.5" /></> },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
-const tabFromHash = (): Tab => (TABS.find((t) => t.id === location.hash.slice(1))?.id ?? "egg");
+const tabFromHash = (): Tab => (TABS.find((t) => t.id === location.hash.slice(1))?.id ?? "pet");
 
 export function App() {
   if (!inTelegram && !isLoggedIn()) return <Login />;
@@ -70,6 +72,7 @@ function Game() {
     <GameCtx.Provider value={game}>
       <div className="app">
         <main>
+          {tab === "pet" && <PetScreen />}
           {tab === "egg" && <EggScreen />}
           {tab === "collection" && <CollectionScreen />}
           {tab === "friends" && <FriendsScreen onInbox={setInbox} />}
@@ -82,6 +85,7 @@ function Game() {
             <a key={t.id} href={`#${t.id}`} aria-current={tab === t.id ? "page" : undefined}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{t.icon}</svg>
               {t.label}
+              {t.id === "pet" && tab !== "pet" && needsCare(livePet(state!, game.now())) && <i className="dotn" />}
               {t.id === "egg" && eggReady && tab !== "egg" && <i className="dotn" />}
               {t.id === "friends" && inbox > 0 && <i className="dotn" />}
             </a>

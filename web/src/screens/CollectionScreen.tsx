@@ -2,17 +2,21 @@ import { useState } from "react";
 import { post, type ApiError, type FigureDto, type GameState } from "../api";
 import { Fig, Reveal, Sheet, useGame, useTick, type RevealData } from "../ui";
 import { dur, ORDER, plural, RLABEL, RPLURAL } from "../util";
+import { ageText } from "./PetScreen";
 
 const rewardLabel = (r: GameState["season"]["album"]["rows"][number]["reward"]) =>
   r.type === "shards" ? `${r.amount} осколков` : r.minRarity ? `яйцо «${RLABEL[r.minRarity].toLowerCase()} или лучше»` : "бонусное яйцо";
 
 function Cell({ f, count, onClick }: { f: FigureDto; count: number; onClick: () => void }) {
+  const { state: s } = useGame();
+  const home = count > 0 && s.pet.active === f.code;
   return (
-    <button className={`cell ${count ? "" : "missing"}`} data-rarity={f.rarity} onClick={onClick}
+    <button className={`cell ${count ? "" : "missing"} ${home ? "active" : ""}`} data-rarity={f.rarity} onClick={onClick}
       aria-label={count ? f.name : `Неизвестная фигурка, ${RLABEL[f.rarity].toLowerCase()}`}>
       <Fig f={f} />
       {!count && <span className="q">?</span>}
       {count > 1 && <span className="cnt num">×{count}</span>}
+      {home && <span className="home" title="Главный питомец">🏠</span>}
       <span className="nm">{count ? f.name : "???"}</span>
     </button>
   );
@@ -45,6 +49,7 @@ function FigureSheet({ f, onClose, onCrafted }: { f: FigureDto; onClose: () => v
           <h2>{f.name}</h2>
           {f.description && <p className="muted">{f.description}</p>}
           <p><b className="num">В коллекции: {count} шт.</b></p>
+          <PetInfo f={f} onClose={onClose} />
           <p className="muted">{count > 1 ? (tradeable ? `Лишних: ${count - 1}. Их можно подарить или обменять в разделе «Друзья».` : "Легендарную нельзя дарить и обменивать.") : "Повторок нет. Дарить и обменивать можно только лишние копии."}</p>
         </>
       ) : (
@@ -61,6 +66,26 @@ function FigureSheet({ f, onClose, onCrafted }: { f: FigureDto; onClose: () => v
         </>
       )}
     </Sheet>
+  );
+}
+
+/** Главный питомец или кнопка «сделать главным» (с возрастом питомца на паузе) */
+function PetInfo({ f, onClose }: { f: FigureDto; onClose: () => void }) {
+  const { state: s, toast, refresh } = useGame();
+  const [busy, setBusy] = useState(false);
+  const p = s.pet.pets.find((x) => x.code === f.code);
+  const stage = p ? s.pet.config.stages[p.stage] : null;
+  if (s.pet.active === f.code) return <p className="age-chip">🏠 Главный питомец{stage ? ` · ${stage.name} · ${ageText(p!.ageMs)}` : ""}</p>;
+  const make = async () => {
+    setBusy(true);
+    try { await post("/api/pet/active", { code: f.code }); await refresh(); toast(`${f.name} теперь главный питомец. Время пошло!`); onClose(); location.hash = "pet"; }
+    catch (e) { toast((e as ApiError).message); setBusy(false); }
+  };
+  return (
+    <>
+      {p && stage && <p className="muted">На паузе: {stage.name.toLowerCase()}, возраст {ageText(p.ageMs)}, уровень {p.level}. Пока питомец не главный, он не растёт и не голодает.</p>}
+      <button className="btn" disabled={busy} onClick={make}>🏠 Сделать главным питомцем</button>
+    </>
   );
 }
 

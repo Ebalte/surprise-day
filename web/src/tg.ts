@@ -26,6 +26,7 @@ type WebApp = {
   openTelegramLink(url: string): void;
   openInvoice(url: string, cb: (status: "paid" | "cancelled" | "failed" | "pending") => void): void;
   requestWriteAccess(cb: (granted: boolean) => void): void;
+  shareToStory?(mediaUrl: string, params?: { text?: string }): void;
   HapticFeedback: Haptic;
   BackButton: { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void };
 };
@@ -65,7 +66,15 @@ export const haptic = {
   crack: () => supports("6.1") && wa!.HapticFeedback.impactOccurred("heavy"),
   success: () => supports("6.1") && wa!.HapticFeedback.notificationOccurred("success"),
   error: () => supports("6.1") && wa!.HapticFeedback.notificationOccurred("error"),
+  /** Короткий щелчок для мини-игр: в Telegram — HapticFeedback, на сайте — вибрация телефона */
+  soft: (ms = 6) => { if (supports("6.1")) wa!.HapticFeedback.impactOccurred("soft"); else try { navigator.vibrate?.(ms); } catch { /* нет вибрации */ } },
 };
+
+/** Публикация в сторис Telegram (с версии 7.8). mediaUrl — публичная https-картинка. */
+export const canShareStory = () => inTelegram && supports("7.8") && !!wa!.shareToStory;
+export function shareStory(mediaUrl: string, text: string) {
+  wa!.shareToStory!(mediaUrl, { text: text.slice(0, 200) });
+}
 
 export function openLink(url: string) {
   if (inTelegram && /^https:\/\/t\.me\//.test(url)) wa!.openTelegramLink(url);

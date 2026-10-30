@@ -131,6 +131,16 @@ model User {
   totalEggs  Int       @default(0)
   firstEggAt DateTime?
 
+  /// Питомец: код фигурки, которая сейчас «живёт» на главном экране. Время идёт только у неё.
+  activePet   String?
+  /// Монеты питомца (за мини-игры, тратятся на еду)
+  coins       Int     @default(40)
+  /// Запас еды: { berry: 3, cookie: 1, ... }
+  petFood     Json    @default("{\"berry\":3,\"cookie\":1}")
+  /// Рекорды мини-игр: { tower: 12, asmr: 90 }
+  gameBest    Json    @default("{}")
+  gamesPlayed Int     @default(0)
+
   /// Пользователь включил уведомления на сайте и разрешил боту писать в личку
   /// (галочка при входе через виджет или /start в боте)
   notificationsEnabled Boolean   @default(false)
@@ -161,6 +171,8 @@ model User {
   quests         UserQuest[]
   rewards        UserReward[]
   purchases      Purchase[]
+  pets           Pet[]
+  gameRuns       GameRun[]
 
   @@index([notificationsEnabled, lastFreeEggAt])
   @@map("users")
@@ -466,4 +478,52 @@ model AdminLog {
 
   @@index([createdAt])
   @@map("admin_log")
+}
+
+// ---------------------------------------------------------------- pets
+
+/// Питомец — фигурка, которую игрок хоть раз делал главным. Показатели 0..100.
+/// Пока питомец не главный, он «на паузе»: last и возраст не двигаются.
+model Pet {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  figureCode  String
+  level       Int       @default(1)
+  xp          Int       @default(0)
+  food        Float     @default(80)
+  mood        Float     @default(80)
+  clean       Float     @default(80)
+  energy      Float     @default(80)
+  asleep      Boolean   @default(false)
+  /// До какого момента показатели уже пересчитаны
+  last        DateTime  @default(now())
+  /// Накопленный возраст (мс) за прошлые периоды, когда питомец был главным
+  ageMs       Float     @default(0)
+  /// С какого момента питомец снова главный (null — на паузе)
+  activeSince DateTime?
+  /// Последняя достигнутая стадия возраста (за новую дают монеты один раз)
+  stage       Int       @default(0)
+  lastPatAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, figureCode])
+  @@map("pets")
+}
+
+/// Запуск мини-игры: сервер выдаёт id при старте и проверяет результат при финише
+model GameRun {
+  id         Int       @id @default(autoincrement())
+  userId     Int
+  game       String
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  score      Int?
+  coins      Int?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+  @@map("game_runs")
 }

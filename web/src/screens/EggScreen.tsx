@@ -22,6 +22,7 @@ export function revealFromEgg(res: OpenResult, s: GameState): RevealData {
   if (res.streakBonus) extra.push("Серия 7 дней подряд! Бонусное яйцо добавлено в запас");
   if (res.completedNow) extra.push(`Коллекция собрана! Бейдж «${s.season.badge.title}» и место в таблице лидеров`);
   extra.push(...res.rewards);
+  if (!s.pet.active) extra.push("🏠 Это ваш первый питомец! Он уже живёт на экране «Питомец».");
   if (!res.isNew && s.season.rules.trading.tradeableRarities.includes(f.rarity)) extra.push("Повторку можно подарить или обменять в разделе «Друзья»");
   return { figure: f, outcome, outcomeNew: res.isNew, extra };
 }

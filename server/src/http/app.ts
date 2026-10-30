@@ -16,6 +16,7 @@ import { GameError, craftFigure, openEgg } from "../game/core.js";
 import { claimGift, displayName, friendsView, proposeTrade, respondTrade, sendGift, upsertTgUser } from "../game/social.js";
 import { claimQuest, gameState, leaderboard, setFrame } from "../game/state.js";
 import { createEggInvoice } from "../game/shop.js";
+import { FOOD, GAMES, buyFood, feedPet, finishGame, patPet, setActivePet, sleepPet, startGame, washPet, type FoodKey } from "../game/pets.js";
 import { getFlag } from "../settings/service.js";
 import { AdError, completeAdView, fetchAdMedia, pickAd, publicAd, registerAdClick, startAdView } from "../ads/service.js";
 import { notifyUser } from "../bot/game-bot.js";
@@ -136,6 +137,17 @@ export function buildApp({ env, botApi, bot }: AppDeps) {
       return r.accepted ? { accepted: true, figure: r.trade.giveFigure.code, ...r.forMe } : { accepted: false };
     });
   }
+
+  // ---------- питомец и мини-игры ----------
+  const food = z.enum(Object.keys(FOOD) as [FoodKey, ...FoodKey[]]);
+  app.post("/api/pet/active", async (req) => { await notInMaintenance(); return setActivePet(req.user.id, body(z.object({ code: z.string() }), req).code); });
+  app.post("/api/pet/buy", async (req) => { await notInMaintenance(); return buyFood(req.user.id, body(z.object({ item: food }), req).item); });
+  app.post("/api/pet/feed", async (req) => { await notInMaintenance(); return feedPet(req.user.id, body(z.object({ item: food }), req).item); });
+  app.post("/api/pet/wash", async (req) => { await notInMaintenance(); return washPet(req.user.id); });
+  app.post("/api/pet/pat", async (req) => patPet(req.user.id));
+  app.post("/api/pet/sleep", async (req) => { await notInMaintenance(); return sleepPet(req.user.id, body(z.object({ asleep: z.boolean() }), req).asleep); });
+  app.post("/api/games/start", async (req) => { await notInMaintenance(); return startGame(req.user.id, body(z.object({ game: z.enum(GAMES) }), req).game); });
+  app.post("/api/games/:id/finish", async (req) => finishGame(req.user.id, id(req), body(z.object({ score: z.number().int().min(0).max(100000) }), req).score));
 
   // ---------- магазин (Stars) ----------
   app.post("/api/shop/invoice", async (req) => {

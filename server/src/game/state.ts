@@ -6,6 +6,7 @@ import { pickAd } from "../ads/service.js";
 import { startOfUtcDay } from "../db.js";
 import { GRANT_LABEL, freeEggAt, freezeAvailable, liveStreak, loadSeason, ownedMap, rk, weekEndsAt, weekKey } from "./core.js";
 import { shopState } from "./shop.js";
+import { petState } from "./pets.js";
 import { displayName } from "./social.js";
 import { GameError } from "./core.js";
 
@@ -17,7 +18,7 @@ export function refLink(userId: number, e: { BOT_USERNAME?: string; MINI_APP_SHO
 export async function gameState(user: User, links: Parameters<typeof refLink>[1], now = new Date()) {
   const ctx = await loadSeason(now);
   const { rules } = ctx;
-  const [owned, us, grants, quests, rewards, badges, shop, maintenance, adsOn, adEggs, rewardedAd] = await Promise.all([
+  const [owned, us, grants, quests, rewards, badges, shop, maintenance, adsOn, adEggs, rewardedAd, pet] = await Promise.all([
     ownedMap(prisma, user.id, ctx.season.id),
     prisma.userSeason.findUnique({ where: { userId_seasonId: { userId: user.id, seasonId: ctx.season.id } } }),
     prisma.eggGrant.findMany({ where: { userId: user.id, usedAt: null }, orderBy: { createdAt: "asc" } }),
@@ -29,6 +30,7 @@ export async function gameState(user: User, links: Parameters<typeof refLink>[1]
     getFlag("ads.enabled"),
     prisma.eggGrant.count({ where: { userId: user.id, source: "AD", createdAt: { gte: startOfUtcDay(now) } } }),
     pickAd("REWARDED", now),
+    petState(user, now),
   ]);
   const qmap = new Map(quests.map((q) => [q.questCode, q]));
   const rewardCodes = new Set(rewards.map((r) => r.code));
@@ -71,6 +73,7 @@ export async function gameState(user: User, links: Parameters<typeof refLink>[1]
     badges: badges.filter((b) => b.kind === "badge").map((b) => ({ code: b.code, title: b.title, icon: b.icon, awardedAt: b.awardedAt })),
     frames: badges.filter((b) => b.kind === "frame").map((b) => ({ code: b.code, title: b.title, color: b.icon })),
     refLink: refLink(user.id, links),
+    pet,
   };
 }
 
