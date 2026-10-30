@@ -192,16 +192,9 @@ export function PetScreen() {
   );
 }
 
-/** Оформление комнаты «Металлист»: постер, колонки, прожекторы */
+/** Оформление комнаты «Металлист»: фон-картинка из styles.css и мерцающие прожекторы */
 export function RoomMetal() {
-  return (
-    <>
-      <div className="lights" aria-hidden="true" />
-      <div className="poster" aria-hidden="true"><span>🤘</span>ROCK</div>
-      <div className="amp l" aria-hidden="true"><i /><i /></div>
-      <div className="amp r" aria-hidden="true"><i /><i /></div>
-    </>
-  );
+  return <div className="lights" aria-hidden="true" />;
 }
 
 /** Наряды и оформление комнаты из ссылок-подарков */
