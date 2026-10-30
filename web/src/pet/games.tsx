@@ -1,9 +1,10 @@
 /**
- * Мини-игры питомца: «Башня вкусняшек» и «ASMR: пузыри и слайм».
+ * Мини-игры питомца: башня, ASMR, ритм, сортировка и прыжки.
  * Сервер выдаёт runId при старте (и списывает энергию), а при финише сам ограничивает очки по времени.
+ * После игры показывается рейтинг дня по этой игре.
  */
 import { useEffect, useRef, useState } from "react";
-import { API_URL, post, type ApiError, type FigureDto, type PetAction } from "../api";
+import { API_URL, api, post, type ApiError, type DayBoard, type FigureDto, type PetAction } from "../api";
 import { useGame } from "../ui";
 import { canShareStory, haptic, shareLink, shareStory, useBackButton } from "../tg";
 import { PetArt, petImage } from "./art";
@@ -11,6 +12,9 @@ import { PetArt, petImage } from "./art";
 export const GAMES = [
   { id: "tower", emoji: "🎂", name: "Башня вкусняшек", text: "Роняйте сладости ровно и не дайте башне упасть." },
   { id: "asmr", emoji: "🫧", name: "ASMR: пузыри и слайм", text: "Лопайте пузырьки и мните слайм. Со звуком и вибрацией." },
+  { id: "rhythm", emoji: "🎵", name: "Ритм-пати", text: "Питомец танцует — жмите на ноты точно в бит." },
+  { id: "sort", emoji: "🧺", name: "Сортировка", text: "Вкусняшки питомцу, мусор в корзину. Быстрее и быстрее!" },
+  { id: "jump", emoji: "🦘", name: "Прыг-скок", text: "Питомец бежит — прыгайте через камни и собирайте ягоды." },
 ] as const;
 export type GameId = (typeof GAMES)[number]["id"];
 
@@ -19,7 +23,7 @@ export type GameId = (typeof GAMES)[number]["id"];
 const MUTE_KEY = "surprise-day-mute";
 let muted = (() => { try { return localStorage.getItem(MUTE_KEY) === "1"; } catch { return false; } })();
 let actx: AudioContext | undefined;
-export function sfx(kind: "pop" | "squish" | "ping" | "thump") {
+export function sfx(kind: "pop" | "squish" | "ping" | "thump" | "beat") {
   if (muted) return;
   try { actx ??= new AudioContext(); } catch { return; }
   const a = actx, t = a.currentTime;
@@ -35,16 +39,17 @@ export function sfx(kind: "pop" | "squish" | "ping" | "thump") {
     const o = a.createOscillator(), gn = a.createGain(), ping = kind === "ping";
     o.type = "sine"; o.frequency.setValueAtTime(ping ? 880 : 150, t);
     o.frequency.exponentialRampToValueAtTime(ping ? 1320 : 60, t + 0.14);
-    gn.gain.setValueAtTime(0.35, t); gn.gain.exponentialRampToValueAtTime(0.001, t + (ping ? 0.25 : 0.18));
+    gn.gain.setValueAtTime(kind === "beat" ? 0.12 : 0.35, t); gn.gain.exponentialRampToValueAtTime(0.001, t + (ping ? 0.25 : 0.18));
     o.connect(gn).connect(a.destination); o.start(t); o.stop(t + 0.3);
   }
 }
 
 // ---------------------------------------------------------------- оболочка игры
 
-type Finish = { score: number; coins: number; xp: number; record: boolean };
+type Finish = { score: number; coins: number; xp: number; record: boolean; team: { points: number; total: number; done: boolean } | null };
+type GameProps = { pet: FigureDto; level: number; outfit: string | null; onScore: (n: number) => void; onEnd: (score: number) => void };
 
-export function GameRunner({ game, pet, level, onClose }: { game: GameId; pet: FigureDto; level: number; onClose: () => void }) {
+export function GameRunner({ game, pet, level, target = "own", onClose }: { game: GameId; pet: FigureDto; level: number; target?: "own" | "pair"; onClose: () => void }) {
   const { state: gs, toast, refresh } = useGame();
   const outfit = gs.pet.style.outfit;
   const [run, setRun] = useState<{ id: number; key: number } | null>(null);
@@ -52,12 +57,13 @@ export function GameRunner({ game, pet, level, onClose }: { game: GameId; pet: F
   const [result, setResult] = useState<Finish | null>(null);
   const [mute, setMute] = useState(muted);
   const [story, setStory] = useState(false);
+  const [board, setBoard] = useState<DayBoard | null>(null);
   const meta = GAMES.find((g) => g.id === game)!;
 
   const start = async () => {
     try {
-      const r = await post<PetAction<{ runId: number }>>("/api/games/start", { game });
-      setScore(0); setResult(null); setRun({ id: r.result.runId, key: Date.now() });
+      const r = await post<PetAction<{ runId: number }>>("/api/games/start", { game, pet: target });
+      setScore(0); setResult(null); setBoard(null); setRun({ id: r.result.runId, key: Date.now() });
     } catch (e) { toast((e as ApiError).message); await refresh(); onClose(); }
   };
   const started = useRef(false);
@@ -72,6 +78,7 @@ export function GameRunner({ game, pet, level, onClose }: { game: GameId; pet: F
       setResult(r.result);
       r.messages.forEach((m, i) => setTimeout(() => toast(m), 600 + i * 1600));
       haptic.success();
+      api<DayBoard>(`/api/games/${game}/leaderboard`).then(setBoard).catch(() => setBoard({ rows: [], me: null, total: 0 }));
     } catch (e) { toast((e as ApiError).message); onClose(); }
     void refresh();
   };
@@ -86,6 +93,8 @@ export function GameRunner({ game, pet, level, onClose }: { game: GameId; pet: F
           <p>Очки: <b className="num">{result.score}</b></p>
           <p><span className="pill num"><i className="coin" />+{result.coins}</span> <span className="pill num">+{result.xp} опыта</span></p>
           <p className="muted">Настроение питомца +15</p>
+          {result.team && <p className="team-line">🏆 В командную цель: +{result.team.points} · {result.team.done ? "цель дня выполнена!" : `${result.team.total}/${gs.pair?.today.goal ?? 300}`}</p>}
+          <DayRating board={board} />
           <button className="btn" style={{ width: "100%" }} onClick={() => setStory(true)}>📲 Поделиться в сторис</button>
           <div className="btn-row" style={{ width: "100%" }}>
             <button className="btn ghost" onClick={() => void start()}>Ещё раз</button>
@@ -107,11 +116,33 @@ export function GameRunner({ game, pet, level, onClose }: { game: GameId; pet: F
         </span>
       </div>
       <div className="game-body">
-        {run && (game === "tower"
-          ? <Tower key={run.key} pet={pet} level={level} outfit={outfit} onScore={setScore} onEnd={(s) => void end(s)} />
-          : <Asmr key={run.key} onScore={setScore} onEnd={(s) => void end(s)} />)}
+        {run && (() => {
+          const props: GameProps = { pet, level, outfit, onScore: setScore, onEnd: (s) => void end(s) };
+          const G = { tower: Tower, asmr: Asmr, rhythm: Rhythm, sort: Sort, jump: Jump }[game];
+          return <G key={run.key} {...props} />;
+        })()}
         {!run && <div className="spinner" aria-label="Загрузка" />}
       </div>
+    </div>
+  );
+}
+
+/** Рейтинг дня по игре: топ-10 за сегодня и ваше место */
+function DayRating({ board }: { board: DayBoard | null }) {
+  if (!board) return <div className="day-rating"><div className="spinner" /></div>;
+  if (!board.rows.length) return <div className="day-rating"><b>Рейтинг дня</b><p className="muted">Сегодня ещё никто не набрал очков в этой игре. Станьте первым!</p></div>;
+  const meIn = board.rows.some((r) => r.you);
+  return (
+    <div className="day-rating">
+      <div className="dr-head"><b>Рейтинг дня</b>{board.me && <span className="muted">вы {board.me.place} из {board.total}</span>}</div>
+      {board.rows.map((r) => (
+        <div key={r.place} className={`lb-row ${r.you ? "you" : ""}`}>
+          <span className="pos num">{r.place <= 3 ? ["🥇", "🥈", "🥉"][r.place - 1] : r.place}</span>
+          <span className="nm">{r.you ? "Вы" : r.name}{r.partner ? " 💞" : ""}</span>
+          <span className="num">{r.score}</span>
+        </div>
+      ))}
+      {board.me && !meIn && <div className="lb-row you"><span className="pos num">{board.me.place}</span><span className="nm">Вы</span><span className="num">{board.me.score}</span></div>}
     </div>
   );
 }
@@ -183,7 +214,7 @@ const KINDS = [
 ];
 
 /** Роняем сладости на тарелку; если сладость свесилась больше чем наполовину или центр тяжести башни ушёл за край — конец */
-function Tower({ pet, level, outfit, onScore, onEnd }: { pet: FigureDto; level: number; outfit: string | null; onScore: (n: number) => void; onEnd: (score: number) => void }) {
+function Tower({ pet, level, outfit, onScore, onEnd }: GameProps) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const cv = ref.current!, ctx = cv.getContext("2d")!, dpr = devicePixelRatio || 1;
@@ -280,7 +311,7 @@ const TOTAL = 25;
 const COLORS = ["#7FC8F8", "#FF9EC4", "#9FD8C8", "#C9A7F5", "#FFB86B"];
 
 /** Лопаем пузырчатую плёнку, потом мнём слайм, и так по кругу 25 секунд */
-function Asmr({ onScore, onEnd }: { onScore: (n: number) => void; onEnd: (score: number) => void }) {
+function Asmr({ onScore, onEnd }: GameProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [left, setLeft] = useState(TOTAL);
   useEffect(() => {
@@ -356,6 +387,248 @@ function Asmr({ onScore, onEnd }: { onScore: (n: number) => void; onEnd: (score:
     <>
       <div ref={ref} className="asmr" />
       <p className="muted" style={{ marginTop: 10, textAlign: "center" }}>Осталось <b className="num">{left}</b> с · золотой пузырь +5</p>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- общее для canvas-игр
+
+/** Canvas под размер экрана с учётом плотности пикселей */
+function fitCanvas(cv: HTMLCanvasElement) {
+  const ctx = cv.getContext("2d")!, dpr = devicePixelRatio || 1, r = cv.getBoundingClientRect();
+  cv.width = r.width * dpr; cv.height = r.height * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, W: r.width, H: r.height };
+}
+type Floater = { t: string; x: number; y: number; life: number };
+function drawFloaters(ctx: CanvasRenderingContext2D, list: Floater[], dt: number) {
+  ctx.textAlign = "center"; ctx.font = "800 18px Unbounded, system-ui";
+  for (const f of list) { f.life -= dt * 1.2; f.y -= 40 * dt; ctx.globalAlpha = Math.max(0, f.life); ctx.fillStyle = "#fff"; ctx.fillText(f.t, f.x, f.y); }
+  ctx.globalAlpha = 1;
+  for (let i = list.length - 1; i >= 0; i--) if (list[i].life <= 0) list.splice(i, 1);
+}
+
+// ---------------------------------------------------------------- ритм-пати
+
+/**
+ * Три дорожки, ноты падают под бит 120 BPM. Точно в линию — 3 очка (+1 при комбо от 10), чуть мимо — 1.
+ * Раунд 30 секунд, промах сбрасывает комбо.
+ */
+function Rhythm({ pet, level, outfit, onScore, onEnd }: GameProps) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = ref.current!, { ctx, W, H } = fitCanvas(cv);
+    const BEAT = 0.5, TOTAL = 30, FALL = 1.6, LANES = 3, COLORS = ["#FF5E9A", "#FFD15C", "#5EC8FF"];
+    const lineY = H - 90, laneW = W / LANES;
+    let img: HTMLImageElement | null = null;
+    void petImage(pet, "happy", level, outfit).then((i) => { img = i; });
+    // Партитура: на каждый бит 0–2 ноты, иногда восьмые
+    const notes: { t: number; lane: number; hit?: boolean; miss?: boolean }[] = [];
+    for (let b = 4; b * BEAT < TOTAL - 0.5; b++) {
+      const r = Math.random();
+      if (r < 0.15) continue;
+      const lane = Math.floor(Math.random() * LANES);
+      notes.push({ t: b * BEAT, lane });
+      if (r > 0.85) notes.push({ t: b * BEAT, lane: (lane + 1 + Math.floor(Math.random() * 2)) % LANES });
+      else if (r > 0.7 && b > 20) notes.push({ t: b * BEAT + BEAT / 2, lane: Math.floor(Math.random() * LANES) });
+    }
+    const t0 = performance.now() + 600;
+    let score = 0, combo = 0, raf = 0, over = false, lastBeat = -1, bounce = 0;
+    const flashes = [0, 0, 0], floats: Floater[] = [];
+    const song = () => (performance.now() - t0) / 1000;
+    const hit = (lane: number) => {
+      if (over) return;
+      const now = song();
+      flashes[lane] = 1;
+      let best: (typeof notes)[number] | null = null;
+      for (const n of notes) if (n.lane === lane && !n.hit && !n.miss && Math.abs(n.t - now) < 0.18 && (!best || Math.abs(n.t - now) < Math.abs(best.t - now))) best = n;
+      if (!best) { combo = 0; return; }
+      best.hit = true;
+      const d = Math.abs(best.t - now), perfect = d < 0.08;
+      combo++;
+      const pts = perfect ? 3 + (combo >= 10 ? 1 : 0) : 1;
+      score += pts; onScore(score);
+      floats.push({ t: perfect ? (combo >= 10 ? `x${combo}!` : "Идеально") : "Неплохо", x: laneW * (lane + 0.5), y: lineY - 30, life: 1 });
+      sfx("pop"); haptic.soft(perfect ? 10 : 5);
+    };
+    const down = (e: PointerEvent) => { const r = cv.getBoundingClientRect(); hit(Math.min(LANES - 1, Math.floor(((e.clientX - r.left) / r.width) * LANES))); };
+    const key = (e: KeyboardEvent) => { const i = ["ArrowLeft", "ArrowDown", "ArrowRight"].indexOf(e.key); const j = "asd".indexOf(e.key.toLowerCase()); if (i >= 0 || j >= 0) { e.preventDefault(); hit(i >= 0 ? i : j); } };
+    cv.addEventListener("pointerdown", down); addEventListener("keydown", key);
+    let last = performance.now();
+    function frame(t: number) {
+      const dt = Math.min(50, t - last) / 1000; last = t;
+      const now = song();
+      if (now > TOTAL) { over = true; onEnd(score); return; }
+      const beat = Math.floor(now / BEAT);
+      if (beat !== lastBeat && now > 0) { lastBeat = beat; bounce = 1; sfx("beat"); }
+      bounce = Math.max(0, bounce - dt * 4);
+      for (const n of notes) if (!n.hit && !n.miss && now - n.t > 0.18) { n.miss = true; combo = 0; }
+      // фон-сцена
+      const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#2B1640"); g.addColorStop(1, "#14101F");
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      for (let i = 0; i < LANES; i++) {
+        ctx.fillStyle = `rgba(255,255,255,${0.04 + flashes[i] * 0.18})`; ctx.fillRect(i * laneW + 4, 0, laneW - 8, H);
+        flashes[i] = Math.max(0, flashes[i] - dt * 5);
+      }
+      if (img) { const s = 150 + bounce * 14; ctx.globalAlpha = 0.9; ctx.drawImage(img, W / 2 - s / 2, H * 0.18 - bounce * 10, s, s); ctx.globalAlpha = 1; }
+      ctx.strokeStyle = "rgba(255,255,255,.7)"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(8, lineY); ctx.lineTo(W - 8, lineY); ctx.stroke();
+      for (let i = 0; i < LANES; i++) { ctx.strokeStyle = COLORS[i]; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(laneW * (i + 0.5), lineY, 24, 0, 7); ctx.stroke(); }
+      for (const n of notes) {
+        if (n.hit || n.t - now > FALL || now - n.t > 0.3) continue;
+        const y = lineY - ((n.t - now) / FALL) * (lineY + 30);
+        ctx.globalAlpha = n.miss ? 0.3 : 1; ctx.fillStyle = COLORS[n.lane];
+        ctx.beginPath(); ctx.arc(laneW * (n.lane + 0.5), y, 20, 0, 7); ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,.6)"; ctx.beginPath(); ctx.arc(laneW * (n.lane + 0.5) - 6, y - 6, 6, 0, 7); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      drawFloaters(ctx, floats, dt);
+      ctx.fillStyle = "#fff"; ctx.font = "800 15px Nunito, system-ui"; ctx.textAlign = "left";
+      ctx.fillText(combo >= 3 ? `Комбо ${combo}` : "", 12, 24);
+      ctx.textAlign = "right"; ctx.fillText(`${Math.max(0, Math.ceil(TOTAL - now))} с`, W - 12, 24);
+      if (now < 0) { ctx.textAlign = "center"; ctx.font = "800 28px Unbounded, system-ui"; ctx.fillText("Готовьтесь!", W / 2, H / 2); }
+      raf = requestAnimationFrame(frame);
+    }
+    raf = requestAnimationFrame(frame);
+    return () => { over = true; cancelAnimationFrame(raf); cv.removeEventListener("pointerdown", down); removeEventListener("keydown", key); };
+  }, []);
+  return (
+    <>
+      <canvas ref={ref} className="gcanvas" aria-label="Три дорожки с нотами: нажимайте на дорожку, когда нота у линии" />
+      <p className="muted" style={{ marginTop: 10, textAlign: "center" }}>Жмите на дорожку, когда нота в кружке. Точно в бит — комбо!</p>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- сортировка
+
+const TREATS = ["🍓", "🍪", "🍰", "🍩", "🍎", "🧁", "🍌", "🍒"];
+const JUNK = ["🧦", "👟", "🧽", "🔋", "🪨", "🧻", "🔧", "📎"];
+
+/** Вкусняшку — влево питомцу, мусор — вправо в корзину. Свайп или кнопки. Три ошибки — конец. */
+function Sort({ onScore, onEnd }: GameProps) {
+  const [item, setItem] = useState<{ em: string; good: boolean; id: number } | null>(null);
+  const [lives, setLives] = useState(3);
+  const [fly, setFly] = useState<"l" | "r" | "x" | null>(null);
+  const [limit, setLimit] = useState(2000);
+  const st = useRef({ score: 0, lives: 3, over: false, timer: 0 as ReturnType<typeof setTimeout> | 0, startX: 0, t0: Date.now(), id: 0, item: null as { em: string; good: boolean; id: number } | null });
+
+  const next = () => {
+    const s = st.current;
+    if (s.over) return;
+    const good = Math.random() < 0.55, pool = good ? TREATS : JUNK;
+    // Чем больше очков, тем меньше времени на решение: от 2 до 0,7 секунды
+    const ms = Math.max(700, 2000 - s.score * 35);
+    setLimit(ms); setFly(null);
+    s.item = { em: pool[Math.floor(Math.random() * pool.length)], good, id: ++s.id };
+    setItem(s.item);
+    clearTimeout(s.timer as ReturnType<typeof setTimeout>);
+    s.timer = setTimeout(() => answer(null), ms);
+  };
+  const answer = (left: boolean | null) => {
+    const s = st.current, cur = s.item;
+    if (s.over || !cur) return;
+    s.item = null; // одно решение на вкусняшку
+    clearTimeout(s.timer as ReturnType<typeof setTimeout>);
+    const ok = left !== null && left === cur.good;
+    if (ok) { s.score++; onScore(s.score); sfx("pop"); haptic.soft(); setFly(left ? "l" : "r"); }
+    else { s.lives--; setLives(s.lives); sfx("thump"); haptic.error(); setFly("x"); }
+    if (s.lives <= 0 || Date.now() - s.t0 > 45_000) { s.over = true; setTimeout(() => onEnd(s.score), 500); }
+    else setTimeout(next, 260);
+  };
+  useEffect(() => {
+    st.current.over = false;
+    const t = setTimeout(next, 500);
+    const key = (e: KeyboardEvent) => { if (e.key === "ArrowLeft") answer(true); if (e.key === "ArrowRight") answer(false); };
+    addEventListener("keydown", key);
+    return () => { st.current.over = true; clearTimeout(t); clearTimeout(st.current.timer as ReturnType<typeof setTimeout>); removeEventListener("keydown", key); };
+  }, []);
+  return (
+    <div className="sort">
+      <div className="sort-top"><span>{"❤️".repeat(lives)}{"🖤".repeat(3 - lives)}</span><span className="muted">Вкусняшки — питомцу, мусор — в корзину</span></div>
+      <div className="sort-field"
+        onPointerDown={(e) => { st.current.startX = e.clientX; }}
+        onPointerUp={(e) => { const dx = e.clientX - st.current.startX; if (Math.abs(dx) > 40) answer(dx < 0); }}>
+        <div className="sort-side l">🐾<br />Питомцу</div>
+        {item && <div key={item.id} className={`sort-card ${fly ?? ""}`}>{item.em}<i className="sort-timer" style={{ animationDuration: `${limit}ms` }} /></div>}
+        <div className="sort-side r">🗑️<br />В корзину</div>
+      </div>
+      <div className="btn-row" style={{ width: "100%" }}>
+        <button className="btn" onClick={() => answer(true)}>⬅ Питомцу</button>
+        <button className="btn ghost" onClick={() => answer(false)}>В корзину ➡</button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- прыг-скок
+
+/** Питомец бежит сам, нажатие — прыжок. +1 за каждое препятствие, ягоды дают бонус. Столкновение — конец. */
+function Jump({ pet, level, outfit, onScore, onEnd }: GameProps) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = ref.current!, { ctx, W, H } = fitCanvas(cv);
+    const GROUND = H - 70, SIZE = 64, X = 60;
+    let img: HTMLImageElement | null = null;
+    void petImage(pet, "happy", level, outfit).then((i) => { img = i; });
+    let y = 0, vy = 0, speed = 260, dist = 0, nextAt = 1.8, score = 0, over = false, raf = 0, last = performance.now(), t = 0;
+    const obs: { x: number; w: number; h: number; em: string; passed?: boolean }[] = [];
+    const berries: { x: number; y: number; got?: boolean }[] = [];
+    const floats: Floater[] = [];
+    const jump = () => { if (over) return; if (y <= 0.5) { vy = 720; sfx("ping"); haptic.soft(6); } };
+    const key = (e: KeyboardEvent) => { if (e.code === "Space" || e.key === "ArrowUp") { e.preventDefault(); jump(); } };
+    cv.addEventListener("pointerdown", jump); addEventListener("keydown", key);
+    const finish = () => { if (over) return; over = true; sfx("thump"); haptic.error(); setTimeout(() => onEnd(score), 900); };
+    function frame(now: number) {
+      const dt = Math.min(40, now - last) / 1000; last = now; t += dt;
+      if (!over) {
+        speed = Math.min(560, 260 + t * 9); dist += speed * dt;
+        vy -= 2000 * dt; y = Math.max(0, y + vy * dt); if (y === 0) vy = 0;
+        nextAt -= dt;
+        if (nextAt <= 0) {
+          const big = Math.random() < 0.35;
+          obs.push({ x: W + 20, w: big ? 34 : 26, h: big ? 44 : 30, em: big ? "🌵" : "🪨" });
+          if (Math.random() < 0.5) berries.push({ x: W + 20 + 90, y: 60 + Math.random() * 50 });
+          nextAt = Math.max(0.55, 1.5 - t * 0.02) + Math.random() * 0.6;
+        }
+        for (const o of obs) {
+          o.x -= speed * dt;
+          // столкновение: прямоугольники с небольшим запасом в пользу игрока
+          const px = X + 10, pw = SIZE - 20, py = GROUND - y - SIZE + 12;
+          if (o.x < px + pw && o.x + o.w > px && GROUND - o.h < py + SIZE - 16) finish();
+          if (!o.passed && o.x + o.w < px) { o.passed = true; score++; onScore(score); }
+        }
+        for (const b of berries) {
+          b.x -= speed * dt;
+          if (!b.got && Math.abs(b.x - (X + SIZE / 2)) < 30 && Math.abs((GROUND - b.y) - (GROUND - y - SIZE / 2)) < 34) {
+            b.got = true; score += 2; onScore(score); sfx("pop"); floats.push({ t: "+2", x: b.x, y: GROUND - b.y - 20, life: 1 });
+          }
+        }
+      }
+      while (obs.length && obs[0].x < -60) obs.shift();
+      while (berries.length && berries[0].x < -60) berries.shift();
+      const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#BFE6FF"); g.addColorStop(1, "#FFF4E6");
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "rgba(255,255,255,.8)";
+      for (let i = 0; i < 4; i++) { const cx = ((i * 170 - dist * 0.2) % (W + 200) + W + 200) % (W + 200) - 100; ctx.beginPath(); ctx.ellipse(cx, 60 + i * 25, 46, 16, 0, 0, 7); ctx.fill(); }
+      ctx.fillStyle = "#9BCB6E"; ctx.fillRect(0, GROUND, W, H - GROUND);
+      ctx.fillStyle = "#86B85A"; for (let x = -(dist % 40); x < W; x += 40) ctx.fillRect(x, GROUND, 20, 6);
+      ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      for (const o of obs) { ctx.font = `${o.h + 6}px system-ui, 'Apple Color Emoji'`; ctx.fillText(o.em, o.x + o.w / 2, GROUND + 4); }
+      for (const b of berries) if (!b.got) { ctx.font = "26px system-ui, 'Apple Color Emoji'"; ctx.fillText("🍓", b.x, GROUND - b.y + 13); }
+      ctx.textBaseline = "alphabetic";
+      if (img) { ctx.save(); ctx.translate(X + SIZE / 2, GROUND - y - SIZE / 2); if (over) ctx.rotate(0.5); ctx.drawImage(img, -SIZE / 2, -SIZE / 2 + (y ? 0 : Math.sin(t * 18) * 2), SIZE, SIZE); ctx.restore(); }
+      drawFloaters(ctx, floats, dt);
+      ctx.fillStyle = "#2A1B14"; ctx.font = "800 15px Nunito, system-ui"; ctx.textAlign = "right";
+      ctx.fillText(`${Math.floor(dist / 100)} м`, W - 12, 24);
+      if (t < 1.2) { ctx.textAlign = "center"; ctx.font = "800 20px Unbounded, system-ui"; ctx.fillText("Нажмите — прыжок!", W / 2, H * 0.4); }
+      raf = requestAnimationFrame(frame);
+    }
+    raf = requestAnimationFrame(frame);
+    return () => { over = true; cancelAnimationFrame(raf); cv.removeEventListener("pointerdown", jump); removeEventListener("keydown", key); };
+  }, []);
+  return (
+    <>
+      <canvas ref={ref} className="gcanvas" aria-label="Бегущий питомец: нажмите, чтобы прыгнуть" />
+      <p className="muted" style={{ marginTop: 10, textAlign: "center" }}>Нажмите, чтобы прыгнуть. 🍓 в воздухе — +2 очка.</p>
     </>
   );
 }

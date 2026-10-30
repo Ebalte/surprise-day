@@ -79,7 +79,7 @@ test("еда за монеты, кормление и сон", async () => {
   await prisma.pet.updateMany({ where: { userId: u.id }, data: { food: 10 } });
   const fed = await feedPet(u.id, "cake");
   assert.ok(fed.pet.food >= 69);
-  await assert.rejects(sleepPet(u.id, true, new Date(Date.now() + 1000)).then(async () => feedPet(u.id, "berry")), /спит/);
+  await assert.rejects(sleepPet(u.id, true, "own", new Date(Date.now() + 1000)).then(async () => feedPet(u.id, "berry")), /спит/);
 });
 
 test("мини-игра: энергия при старте, очки ограничены временем, повторно не засчитать", async () => {
@@ -88,7 +88,7 @@ test("мини-игра: энергия при старте, очки огран
   await seed(u.id, "owl");
   const t0 = new Date();
   await setActivePet(u.id, "owl", t0);
-  const { result } = await startGame(u.id, "tower", t0);
+  const { result } = await startGame(u.id, "tower", "own", t0);
   const fin = await finishGame(u.id, result.runId, 9999, new Date(t0.getTime() + 5000));
   assert.equal(fin.result.score, 60); // за 5 секунд максимум 10 этажей × 6
   assert.equal(fin.result.coins, 60);
@@ -130,4 +130,99 @@ test("ссылка-подарок: получают и старые игроки
   assert.equal((await call(6, "POST", "/api/pet/style", { outfit: null, room: "metal" })).status, 200);
   assert.equal((await call(8, "POST", "/api/pet/style", { outfit: "metal", room: null })).status, 400);
   await prisma.promoLink.delete({ where: { id: promo.id } });
+});
+
+test("пати: создание, вход по коду, уход вдвоём, серия заботы и командная цель", async () => {
+  for (const n of [10, 11, 12]) await call(n, "GET", "/api/state");
+  const [a, b] = [await userOf(10), await userOf(11)];
+  await seed(a.id, "fox");
+  assert.equal((await call(10, "POST", "/api/pair/create", { code: "bear", kind: "couple" })).status, 400); // нет такой фигурки
+  const created = await call(10, "POST", "/api/pair/create", { code: "fox", kind: "couple" });
+  assert.equal(created.status, 200);
+  const code: string = created.body.inviteCode;
+  let s = (await call(10, "GET", "/api/state")).body;
+  assert.equal(s.pair.role, "owner");
+  assert.match(s.pair.inviteLink, new RegExp(`pair[=_]${code}$`));
+  assert.equal((await call(10, "POST", "/api/pair/join", { code })).status, 400); // своё приглашение
+  const preview = await call(11, "GET", `/api/pair/invite/${code.toLowerCase()}`);
+  assert.equal(preview.body.figureCode, "fox");
+  assert.equal((await call(11, "POST", "/api/pair/join", { code: code.toLowerCase() })).status, 200);
+  assert.equal((await call(12, "POST", "/api/pair/join", { code })).status, 409); // третьему нельзя
+  s = (await call(11, "GET", "/api/state")).body;
+  assert.equal(s.pair.role, "partner");
+  assert.equal(s.pair.inviteCode, null);
+
+  // Оба заботятся в один день — серия 1; на следующий день — 2
+  await prisma.user.updateMany({ where: { id: { in: [a.id, b.id] } }, data: { petFood: { berry: 5 } } });
+  const d0 = new Date("2026-11-03T09:00:00Z"), d1 = new Date(d0.getTime() + 24 * H);
+  await prisma.pet.updateMany({ where: { pair: { ownerId: a.id } }, data: { last: d0, food: 50 } });
+  await feedPet(a.id, "berry", "pair", d0);
+  const both = await feedPet(b.id, "berry", "pair", new Date(d0.getTime() + 60_000));
+  assert.ok(both.messages.some((m) => /Серия заботы: 1/.test(m)));
+  await prisma.pet.updateMany({ where: { pair: { ownerId: a.id } }, data: { food: 50 } });
+  await feedPet(b.id, "berry", "pair", d1);
+  const second = await feedPet(a.id, "berry", "pair", new Date(d1.getTime() + 60_000));
+  assert.ok(second.messages.some((m) => /Серия заботы: 2/.test(m)));
+
+  // Командная цель: оба сыграли, сумма ≥ 300 → по 40 монет каждому, второму уходит уведомление
+  await prisma.pet.updateMany({ where: { pair: { ownerId: a.id } }, data: { energy: 100, asleep: false } });
+  const coinsB = (await userOf(11)).coins;
+  const r1 = await startGame(a.id, "tower", "pair", d1);
+  await finishGame(a.id, r1.result.runId, 60, new Date(d1.getTime() + 30_000)); // 60 × 3 = 180 очков команды
+  const r2 = await startGame(b.id, "jump", "pair", new Date(d1.getTime() + 60_000));
+  const fin = await finishGame(b.id, r2.result.runId, 30, new Date(d1.getTime() + 90_000)); // 30 × 5 = 150
+  assert.equal(fin.result.team?.done, true);
+  assert.equal(fin.notices[0].userId, a.id);
+  assert.ok((await userOf(11)).coins >= coinsB + fin.result.coins + 40); // плюс возможный бонус за уровень питомца
+
+  // Партнёр выходит — питомец остаётся хозяину, код приглашения новый
+  assert.equal((await call(11, "POST", "/api/pair/leave")).status, 200);
+  s = (await call(10, "GET", "/api/state")).body;
+  assert.equal(s.pair.partner, null);
+  assert.notEqual(s.pair.inviteCode, code);
+  assert.equal((await call(11, "GET", "/api/state")).body.pair, null);
+  // Хозяин выходит один — пати и общий питомец удаляются
+  await call(10, "POST", "/api/pair/leave");
+  assert.equal(await prisma.pair.count({ where: { ownerId: a.id } }), 0);
+});
+
+test("рейтинг дня: лучший результат каждого, своё место", async () => {
+  for (const n of [13, 14]) await call(n, "GET", "/api/state");
+  const [a, b] = [await userOf(13), await userOf(14)];
+  const now = new Date();
+  await prisma.gameRun.createMany({ data: [
+    { userId: a.id, game: "sort", startedAt: now, finishedAt: now, score: 10 },
+    { userId: a.id, game: "sort", startedAt: now, finishedAt: now, score: 25 },
+    { userId: b.id, game: "sort", startedAt: now, finishedAt: now, score: 40 },
+  ] });
+  const lb = (await call(13, "GET", "/api/games/sort/leaderboard")).body;
+  const mine = lb.rows.find((r: { you: boolean }) => r.you);
+  assert.equal(mine.score, 25);
+  assert.ok(lb.rows.findIndex((r: { you: boolean }) => r.you) > lb.rows.findIndex((r: { name: string }) => r.name === "Питомец14"));
+  assert.equal(lb.me.score, 25);
+  assert.equal((await call(13, "GET", "/api/games/nope/leaderboard")).status, 400);
+});
+
+test("напоминания: о каждой нужде один раз, сброс после ухода, тишина ночью", async () => {
+  const { needsOf } = await import("../src/bot/pet-reminders.js");
+  await call(15, "GET", "/api/state");
+  const u = await userOf(15);
+  await seed(u.id, "duck");
+  const t0 = new Date("2026-11-05T09:00:00Z"); // 12:00 по Москве
+  await setActivePet(u.id, "duck", t0);
+  const pet = await prisma.pet.findFirstOrThrow({ where: { userId: u.id } });
+  const later = needsOf(pet, new Date(t0.getTime() + 10 * H)); // 80 − 60 = 20 сытости
+  assert.equal(later.on.food, true);
+  assert.equal(later.on.clean, false);
+  const { notifyPets } = await import("../src/bot/pet-reminders.js");
+  const texts: string[] = [];
+  const api = new Api("1:x"); api.config.use(async (_p, method, payload) => { if (method === "sendMessage") texts.push((payload as { text: string }).text); return { ok: true, result: { message_id: 1, date: 0, chat: { id: 1, type: "private" } } } as never; });
+  await prisma.user.update({ where: { id: u.id }, data: { notificationsEnabled: true } });
+  const at = new Date(t0.getTime() + 10 * H); // 22:00 по Москве
+  await notifyPets(api, "https://game.example", at, async () => "Утёнок Плюх");
+  assert.ok(texts.some((t) => /Утёнок Плюх:\n🍓 хочет есть/.test(t)));
+  const n = texts.length;
+  await notifyPets(api, "https://game.example", new Date(at.getTime() + 4 * H), async () => "Утёнок Плюх"); // 02:00 — ночь, молчим
+  await notifyPets(api, "https://game.example", new Date(at.getTime() + 0.5 * H), async () => "Утёнок Плюх"); // уже писали
+  assert.equal(texts.length, n);
 });

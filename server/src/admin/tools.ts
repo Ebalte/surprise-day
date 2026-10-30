@@ -7,7 +7,7 @@ let broadcastRunning = false;
 
 async function showStats(ctx: AdminContext) {
   const today = startOfUtcDay();
-  const [users, newToday, activeToday, eggsToday, purchases, adEggs, activeAds, banned] = await Promise.all([
+  const [users, newToday, activeToday, eggsToday, purchases, adEggs, activeAds, banned, pairs, fullPairs, gamesToday] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { createdAt: { gte: today } } }),
     prisma.user.count({ where: { lastSeenAt: { gte: today } } }),
@@ -16,6 +16,9 @@ async function showStats(ctx: AdminContext) {
     prisma.eggGrant.count({ where: { source: "AD", createdAt: { gte: today } } }),
     prisma.adCampaign.count({ where: { isActive: true } }),
     prisma.user.count({ where: { isBanned: true } }),
+    prisma.pair.count(),
+    prisma.pair.count({ where: { partnerId: { not: null } } }),
+    prisma.gameRun.count({ where: { finishedAt: { gte: today } } }),
   ]);
   const text = [
     "<b>Статистика</b> · сегодня с 00:00 UTC",
@@ -26,6 +29,8 @@ async function showStats(ctx: AdminContext) {
     `Открыто яиц: <b>${eggsToday}</b>`,
     `Покупок за Stars: <b>${purchases._count}</b> на <b>${purchases._sum.stars ?? 0}</b> ⭐`,
     `Яиц за рекламу: <b>${adEggs}</b> · активных кампаний: ${activeAds}`,
+    `Мини-игр сыграно: <b>${gamesToday}</b>`,
+    `Пати с общим питомцем: <b>${fullPairs}</b> (ещё ждут второго: ${pairs - fullPairs})`,
   ].join("\n");
   await show(ctx, text, new InlineKeyboard().text("🔄 Обновить", "stats").text("◀ Меню", "menu"));
 }

@@ -29,7 +29,7 @@ export function createGameBot(opts: GameBotOptions) {
     // Пользователь сам написал боту — значит, ему можно присылать уведомления
     await prisma.user.update({ where: { id: user.id }, data: { notificationsEnabled: true, botBlocked: false } });
     await ctx.reply(
-      "🥚 <b>Сюрприз дня</b>\n\nКаждый день новое яйцо с фигуркой внутри. Соберите все 16 фигурок сезона, меняйтесь с друзьями и попадите в таблицу лидеров.\n\nЯ напомню, когда будет готово новое яйцо.",
+      "🥚 <b>Сюрприз дня</b>\n\nКаждый день новое яйцо с фигуркой внутри. Соберите все 16 фигурок сезона, меняйтесь с друзьями и попадите в таблицу лидеров.\n\nЯ напомню, когда будет готово новое яйцо и когда питомцу что-то понадобится.",
       { parse_mode: "HTML", reply_markup: playKeyboard(opts.webAppUrl) },
     );
   });
@@ -70,11 +70,12 @@ export function createGameBot(opts: GameBotOptions) {
 }
 
 /** Сообщение игроку от игрового бота. Ошибки не роняют запрос; заблокировавших помечаем. */
-export async function notifyUser(api: Api, webAppUrl: string, userId: number, text: string) {
+export async function notifyUser(api: Api, webAppUrl: string, userId: number, text: string, button?: { text: string; hash: string }) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user || !user.notificationsEnabled || user.botBlocked || user.isBanned) return false;
   try {
-    await api.sendMessage(Number(user.telegramId), text, { reply_markup: playKeyboard(webAppUrl) });
+    const kb = button ? playKeyboard(`${webAppUrl.replace(/#.*$/, "")}#${button.hash}`, button.text) : playKeyboard(webAppUrl);
+    await api.sendMessage(Number(user.telegramId), text, { reply_markup: kb });
     return true;
   } catch (e) {
     if (e instanceof GrammyError && e.error_code === 403) await prisma.user.update({ where: { id: userId }, data: { botBlocked: true } });

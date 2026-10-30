@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { post, type ApiError, type FigureDto, type GameState, type PetAction, type PetDto } from "../api";
 import { EGG_SVG, Fig, Sheet, useGame, useTick } from "../ui";
-import { haptic } from "../tg";
+import { haptic, shareLink } from "../tg";
 import { DAY, HOUR, plural, RLABEL } from "../util";
 import { PetArt, STYLE_NAMES, type Expr } from "../pet/art";
 import { GAMES, GameRunner, type GameId } from "../pet/games";
 
 const clamp = (v: number) => Math.max(0, Math.min(100, v));
 
-/** Показатели главного питомца «сейчас»: сервер прислал их на момент serverTime, дальше досчитываем так же, как сервер */
+/** Показатели «сейчас»: сервер прислал их на момент serverTime, дальше досчитываем так же, как сервер */
 export function livePet(s: GameState, now: number): PetDto | null {
-  const p = s.pet.pets.find((x) => x.code === s.pet.active);
+  return liveDto(s, s.pet.pets.find((x) => x.code === s.pet.active), now);
+}
+/** Общий питомец пати «сейчас» */
+export const livePairPet = (s: GameState, now: number) => liveDto(s, s.pair?.pet, now);
+function liveDto(s: GameState, p: PetDto | undefined, now: number): PetDto | null {
   if (!p) return null;
   const h = Math.max(0, (now - Date.parse(s.serverTime)) / HOUR);
   const q = { ...p, ageMs: p.ageMs + h * HOUR };
@@ -46,9 +50,47 @@ function wish(p: PetDto) {
 }
 const barCls = (v: number) => (v < 25 ? "low" : v < 50 ? "mid" : "");
 
+const VIEW_KEY = "surprise-day-petview";
+export type PetTarget = "own" | "pair";
+/** Переключить экран питомца (например, после принятия приглашения в пати) */
+export const setPetView = (v: PetTarget) => {
+  try { localStorage.setItem(VIEW_KEY, v); } catch { /* приватный режим */ }
+  dispatchEvent(new CustomEvent("petview", { detail: v }));
+};
+const savedView = (): PetTarget => { try { return localStorage.getItem(VIEW_KEY) === "pair" ? "pair" : "own"; } catch { return "own"; } };
+
+/** Экран «Питомец»: свой питомец или общий питомец пати */
 export function PetScreen() {
-  const { state: s, now, toast, refresh } = useGame();
+  const { state: s, now } = useGame();
   useTick(10_000);
+  const [view, setView] = useState<PetTarget>(savedView);
+  const choose = (v: PetTarget) => setPetView(v);
+  useEffect(() => {
+    const on = (e: Event) => setView((e as CustomEvent<PetTarget>).detail);
+    addEventListener("petview", on);
+    return () => removeEventListener("petview", on);
+  }, []);
+  const figs = new Map(s.season.figures.map((f) => [f.code, f]));
+  const pairPet = livePairPet(s, now());
+  const pairFig = s.pair ? figs.get(s.pair.pet.code) : undefined;
+  const heart = s.pair?.kind === "friends" ? "🤝" : "💞";
+  return (
+    <>
+      <div className="seg" role="tablist" aria-label="Чей питомец">
+        <button role="tab" aria-selected={view === "own"} onClick={() => choose("own")}>🏠 Мой питомец</button>
+        <button role="tab" aria-selected={view === "pair"} onClick={() => choose("pair")}>
+          {heart} Общий{s.pair && needsCare(pairPet) && <i className="dotn" />}
+        </button>
+      </div>
+      {view === "own"
+        ? <PetCare key="own" target="own" />
+        : s.pair && pairFig ? <PetCare key="pair" target="pair" /> : <PairStart />}
+    </>
+  );
+}
+
+function PetCare({ target }: { target: PetTarget }) {
+  const { state: s, now, toast, refresh } = useGame();
   const [say, setSay] = useState<string | null>(null);
   const [sheet, setSheet] = useState<"feed" | "games" | "style" | null>(null);
   const [game, setGame] = useState<GameId | null>(null);
@@ -59,8 +101,9 @@ export function PetScreen() {
   const room = useRef<HTMLDivElement>(null);
   const lastPat = useRef(0);
   const figs = new Map(s.season.figures.map((f) => [f.code, f]));
-  const p = livePet(s, now());
-  const f = s.pet.active ? figs.get(s.pet.active) : undefined;
+  const pair = target === "pair" ? s.pair : null;
+  const p = pair ? livePairPet(s, now()) : livePet(s, now());
+  const f = pair ? figs.get(pair.pet.code) : s.pet.active ? figs.get(s.pet.active) : undefined;
 
   const pop = (t: string, x?: number, y?: number) => {
     const r = room.current?.getBoundingClientRect();
@@ -72,7 +115,7 @@ export function PetScreen() {
   const act = async <T,>(path: string, payload: object = {}, line?: string) => {
     setBusy(true);
     try {
-      const r = await post<PetAction<T>>(path, payload);
+      const r = await post<PetAction<T>>(path, { ...payload, pet: target });
       if (line) setSay(line);
       r.messages.forEach((m, i) => setTimeout(() => toast(`${f?.name}: ${m}`), 300 + i * 1800));
       await refresh();
@@ -80,7 +123,7 @@ export function PetScreen() {
     } catch (e) { toast((e as ApiError).message); return null; } finally { setBusy(false); }
   };
 
-  if (!p || !f) return <ChoosePet />;
+  if (!p || !f) return pair ? null : <ChoosePet />;
   const stages = s.pet.config.stages, st = stages[p.stage], next = stages[p.stage + 1];
   const left = next ? Math.max(1, Math.ceil(next.fromDays - p.ageMs / DAY)) : 0;
 
@@ -91,7 +134,7 @@ export function PetScreen() {
     pop(["💛", "💖", "✨"][Math.floor(Math.random() * 3)], e.clientX - r.left, e.clientY - r.top - 10);
     setJump((j) => j + 1); haptic.tap();
     // Сервер засчитывает поглаживание не чаще раза в секунду — не шлём лишнего
-    if (Date.now() - lastPat.current > 1200) { lastPat.current = Date.now(); void post("/api/pet/pat").then(() => refresh()).catch(() => {}); }
+    if (Date.now() - lastPat.current > 1200) { lastPat.current = Date.now(); void post("/api/pet/pat", { pet: target }).then(() => refresh()).catch(() => {}); }
   };
   const sleep = () => {
     if (!p.asleep && p.energy >= 95) return toast("Питомец бодр и не хочет спать");
@@ -101,7 +144,7 @@ export function PetScreen() {
   return (
     <section className="screen">
       <div className="topbar">
-        <div><h1 style={{ fontSize: 20 }}>{f.name}</h1><p className="muted">{RLABEL[f.rarity]} · уровень {p.level}</p></div>
+        <div><h1 style={{ fontSize: 20 }}>{f.name}</h1><p className="muted">{pair ? `${pair.kind === "friends" ? "🤝 Общий с другом" : "💞 Общий питомец пары"}` : RLABEL[f.rarity]} · уровень {p.level}</p></div>
         <span className="pill num"><i className="coin" />{s.pet.coins}</span>
       </div>
       <div className={`room ${p.asleep ? "night" : ""} ${s.pet.style.room ? `theme-${s.pet.style.room}` : ""}`} ref={room}>
@@ -133,7 +176,7 @@ export function PetScreen() {
         </div>
         <div className="xp"><span>Уровень {p.level}</span><span className="num">{p.xp}/{p.needXp} опыта</span></div>
         <div className="bar xpbar"><i style={{ width: `${(p.xp / p.needXp) * 100}%` }} /></div>
-        <p className="pnote">{next ? `Станет «${next.name}» через ${left} ${plural(left, "день", "дня", "дней")} ухода.` : "Самая мудрая стадия."} Монеты в играх ×{st.mult}. Остальные питомцы ждут на паузе в коллекции.</p>
+        <p className="pnote">{next ? `Станет «${next.name}» через ${left} ${plural(left, "день", "дня", "дней")} ухода.` : "Самая мудрая стадия."} Монеты в играх ×{st.mult}. {pair ? "Общий питомец живёт всегда: время идёт, даже когда вы заняты своим." : "Остальные питомцы ждут на паузе в коллекции."}</p>
       </div>
 
       <div className="actions">
@@ -143,7 +186,8 @@ export function PetScreen() {
         <button className="act" disabled={busy} onClick={sleep}><span>{p.asleep ? "☀️" : "🌙"}</span>{p.asleep ? "Разбудить" : "Спать"}</button>
       </div>
       <button className="btn ghost" onClick={() => setSheet("style")}>👕 Стиль питомца{s.pet.style.owned.length ? "" : " · скоро"}</button>
-      <p className="pnote">Погладьте питомца, коснувшись его. Сменить питомца можно в «Коллекции».</p>
+      <p className="pnote">Погладьте питомца, коснувшись его. {pair ? "Еду покупаете вы, а заботиться может любой из вас." : "Сменить питомца можно в «Коллекции»."}</p>
+      {pair && <PairPanel />}
 
       {sheet === "feed" && (
         <Sheet onClose={() => setSheet(null)}>
@@ -172,7 +216,7 @@ export function PetScreen() {
       {sheet === "games" && (
         <Sheet onClose={() => setSheet(null)}>
           <h2>Во что поиграем?</h2>
-          <p className="muted">Игра: −{s.pet.config.energyCost} энергии, +15 настроения. Энергия: <b className="num">{Math.round(p.energy)}</b>. Монеты ×{st.mult} за возраст.</p>
+          <p className="muted">Игра: −{s.pet.config.energyCost} энергии, +15 настроения. Энергия: <b className="num">{Math.round(p.energy)}</b>. Монеты ×{st.mult} за возраст.{pair ? " Очки идут в командную цель дня." : ""}</p>
           <div className="games" style={{ alignSelf: "stretch" }}>
             {GAMES.map((g) => (
               <button key={g.id} className="game-card" onClick={() => {
@@ -187,7 +231,7 @@ export function PetScreen() {
           </div>
         </Sheet>
       )}
-      {game && <GameRunner game={game} pet={f} level={p.level} onClose={() => setGame(null)} />}
+      {game && <GameRunner game={game} pet={f} level={p.level} target={target} onClose={() => setGame(null)} />}
     </section>
   );
 }
@@ -278,6 +322,141 @@ function ChoosePet() {
             <button key={f.code} className="cell" data-rarity={f.rarity} onClick={() => void choose(f)}><Fig f={f} /><span className="nm">{f.name}</span></button>
           ))}</div>
         ) : <a className="btn" href="#egg">🥚 К яйцу</a>}
+      </div>
+    </section>
+  );
+}
+
+const ago = (iso: string, now: number) => {
+  const m = Math.max(0, Math.floor((now - Date.parse(iso)) / 60000));
+  if (m < 1) return "только что";
+  if (m < 60) return `${m} мин назад`;
+  const h = Math.floor(m / 60);
+  return h < 24 ? `${h} ч назад` : `${Math.floor(h / 24)} дн назад`;
+};
+
+/** Пати: кто с вами, серия заботы, командная цель дня, журнал и приглашение */
+function PairPanel() {
+  const { state: s, now, toast, refresh } = useGame();
+  const [leave, setLeave] = useState(false);
+  const pair = s.pair!;
+  const heart = pair.kind === "friends" ? "🤝" : "❤️";
+  const t = pair.today, total = t.myPoints + t.matePoints;
+  const doLeave = async () => {
+    try { await post("/api/pair/leave"); toast("Вы вышли из пати"); setLeave(false); await refresh(); }
+    catch (e) { toast((e as ApiError).message); }
+  };
+  return (
+    <div className="panel pair-panel">
+      <div className="pair-who">
+        <span className="ava sm">{s.me.name[0]}</span><span className="heart">{heart}</span>
+        <span className={`ava sm ${pair.partner ? "" : "empty"}`}>{pair.partner ? pair.partner.name[0] : "?"}</span>
+        <div><b>Вы {heart} {pair.partner?.name ?? "ждём второго"}</b>
+          <p className="muted">{pair.kind === "friends" ? "Друзья" : "Пара"} · заботитесь вместе</p></div>
+      </div>
+
+      {pair.partner ? (
+        <>
+          <div className="pair-row"><span>🔥 Серия заботы</span><b className="num">{pair.careStreak} {plural(pair.careStreak, "день", "дня", "дней")}</b></div>
+          <div className="care-today">
+            <span className={t.meCared ? "ok" : ""}>{t.meCared ? "✓" : "○"} Вы сегодня</span>
+            <span className={t.mateCared ? "ok" : ""}>{t.mateCared ? "✓" : "○"} {pair.partner.name}</span>
+          </div>
+          <p className="pnote">Позаботьтесь о питомце оба в один день — серия растёт. Каждые 7 дней подряд: +100 монет каждому.</p>
+          <div className="pair-row"><span>🏆 Командная цель дня</span><b className="num">{Math.min(total, t.goal)}/{t.goal}</b></div>
+          <div className="bar xpbar"><i style={{ width: `${Math.min(100, (total / t.goal) * 100)}%` }} /></div>
+          <p className="pnote">{t.rewarded ? "Выполнено! Завтра будет новая цель." : `Играйте в мини-игры за общего питомца: вы ${t.myPoints}, ${pair.partner.name} ${t.matePoints}. Нужно, чтобы сыграли оба. Награда: +40 монет каждому.`}</p>
+        </>
+      ) : (
+        <Invite />
+      )}
+
+      {pair.log.length > 0 && (
+        <details className="pair-log">
+          <summary>Кто что делал</summary>
+          {pair.log.map((l, i) => <p key={i}><b>{l.name}</b> {l.action} <span className="muted">· {ago(l.at, now())}</span></p>)}
+        </details>
+      )}
+      {leave ? (
+        <div className="btn-row">
+          <button className="btn ghost" onClick={() => setLeave(false)}>Остаться</button>
+          <button className="btn" onClick={() => void doLeave()}>Да, выйти</button>
+        </div>
+      ) : <button className="btn ghost sm" onClick={() => setLeave(true)}>Выйти из пати</button>}
+      {leave && <p className="pnote">{pair.partner ? `Общий питомец останется у ${pair.partner.name}.` : "Вы один в пати: общий питомец пропадёт."}</p>}
+    </div>
+  );
+}
+
+/** Приглашение второго игрока: ссылка в Telegram и код, который можно продиктовать */
+function Invite() {
+  const { state: s, toast } = useGame();
+  const pair = s.pair!;
+  const text = pair.kind === "friends" ? "Давай растить питомца вместе! Заходи в мою пати 🤝" : "Давай растить нашего питомца вместе 💞";
+  const copy = async () => { try { await navigator.clipboard.writeText(pair.inviteCode!); toast("Код скопирован"); } catch { toast(`Код: ${pair.inviteCode}`); } };
+  return (
+    <div className="invite">
+      <p><b>Позовите второго игрока.</b> Пока его нет, ухаживать можете вы один.</p>
+      <button className="btn" onClick={() => shareLink(pair.inviteLink!, text)}>📨 Отправить приглашение</button>
+      <button className="code" onClick={() => void copy()} aria-label="Скопировать код">{pair.inviteCode}</button>
+      <p className="pnote">Или пусть друг откроет «Питомец» → «Общий» → «Ввести код».</p>
+    </div>
+  );
+}
+
+/** Нет пати: создать свою или войти по коду */
+function PairStart() {
+  const { state: s, toast, refresh } = useGame();
+  const [step, setStep] = useState<"intro" | "kind" | "pet" | "code">("intro");
+  const [kind, setKind] = useState<"couple" | "friends">("couple");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const owned = s.season.figures.filter((f) => s.collection[f.code]);
+  const run = async (fn: () => Promise<unknown>, ok: string) => {
+    setBusy(true);
+    try { await fn(); await refresh(); toast(ok); } catch (e) { toast((e as ApiError).message); } finally { setBusy(false); }
+  };
+  return (
+    <section className="screen">
+      <div className="panel pair-intro">
+        <div className="big-heart">💞</div>
+        <h2>Общий питомец на двоих</h2>
+        <p className="muted">Соберите пати с парой или другом и растите питомца вместе: кормите по очереди, играйте в мини-игры за общий счёт и держите серию заботы.</p>
+        {step === "intro" && (
+          <div className="btn-row" style={{ alignSelf: "stretch" }}>
+            <button className="btn" onClick={() => setStep("kind")}>Создать пати</button>
+            <button className="btn ghost" onClick={() => setStep("code")}>Ввести код</button>
+          </div>
+        )}
+        {step === "kind" && (
+          <>
+            <p><b>Кто вы друг другу?</b></p>
+            <div className="btn-row" style={{ alignSelf: "stretch" }}>
+              <button className="btn ghost" aria-pressed={kind === "couple"} onClick={() => { setKind("couple"); setStep("pet"); }}>❤️ Пара</button>
+              <button className="btn ghost" aria-pressed={kind === "friends"} onClick={() => { setKind("friends"); setStep("pet"); }}>🤝 Друзья</button>
+            </div>
+          </>
+        )}
+        {step === "pet" && (
+          owned.length ? (
+            <>
+              <p><b>Кто станет общим питомцем?</b> Он начнёт расти с нуля, ваш личный питомец не изменится.</p>
+              <div className="grid" style={{ alignSelf: "stretch" }}>{owned.map((f) => (
+                <button key={f.code} className="cell" data-rarity={f.rarity} disabled={busy}
+                  onClick={() => void run(() => post("/api/pair/create", { code: f.code, kind }), "Пати создана! Позовите второго игрока")}>
+                  <Fig f={f} /><span className="nm">{f.name}</span>
+                </button>
+              ))}</div>
+            </>
+          ) : <><p className="muted">Сначала откройте яйцо: общим питомцем станет одна из ваших фигурок.</p><a className="btn" href="#egg">🥚 К яйцу</a></>
+        )}
+        {step === "code" && (
+          <form className="code-form" onSubmit={(e) => { e.preventDefault(); void run(() => post("/api/pair/join", { code }), "Вы в пати! Питомец теперь общий"); }}>
+            <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="Код, например K7M2QX" maxLength={12} autoCapitalize="characters" aria-label="Код приглашения" />
+            <button className="btn" disabled={busy || code.trim().length < 4}>Войти</button>
+          </form>
+        )}
+        {step !== "intro" && <button className="btn ghost sm" onClick={() => setStep("intro")}>Назад</button>}
       </div>
     </section>
   );

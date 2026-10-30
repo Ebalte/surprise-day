@@ -5,6 +5,8 @@ import { env, adminIds, gameLink } from "./env.js";
 import { prisma } from "./db.js";
 import { buildApp } from "./http/app.js";
 import { createGameBot, notifyEggReady } from "./bot/game-bot.js";
+import { notifyPets } from "./bot/pet-reminders.js";
+import { loadSeason } from "./game/core.js";
 import { createAdminBot } from "./admin/bot.js";
 
 const e = env();
@@ -36,8 +38,12 @@ if (e.BOT_MODE !== "off") {
   }
   app.log.info(`Игровой бот @${bot.botInfo.username} запущен (${e.BOT_MODE})`);
 
+  let minute = 0;
+  const figureName = async (code: string) => (await loadSeason()).byCode.get(code)?.name ?? "Питомец";
   setInterval(() => {
     notifyEggReady(bot.api, e.WEB_APP_URL).catch((err) => app.log.error(err, "notifier"));
+    // Напоминания о питомцах — раз в 10 минут
+    if (minute++ % 10 === 0) notifyPets(bot.api, e.WEB_APP_URL, new Date(), figureName).catch((err) => app.log.error(err, "pet-notifier"));
   }, 60_000);
 }
 

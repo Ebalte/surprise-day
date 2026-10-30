@@ -140,6 +140,8 @@ model User {
   /// Рекорды мини-игр: { tower: 12, asmr: 90 }
   gameBest    Json    @default("{}")
   gamesPlayed Int     @default(0)
+  /// Напоминания бота о питомце (голод, грязь, скука, усталость). Работают, если включены уведомления.
+  petNotify   Boolean @default(true)
   /// Полученные стили питомца (наряды и комнаты): ["outfit:metal", "room:metal"]
   cosmetics   Json    @default("[]")
   /// Что сейчас надето и как оформлена комната (null — обычный вид)
@@ -180,6 +182,9 @@ model User {
   gameRuns       GameRun[]
   stories        StoryImage[]
   promoClaims    PromoClaim[]
+  pairsOwned     Pair[]       @relation("PairOwner")
+  pairsJoined    Pair[]       @relation("PairPartner")
+  petLog         PetLog[]
 
   @@index([notificationsEnabled, lastFreeEggAt])
   @@map("users")
@@ -493,7 +498,8 @@ model AdminLog {
 /// Пока питомец не главный, он «на паузе»: last и возраст не двигаются.
 model Pet {
   id          Int       @id @default(autoincrement())
-  userId      Int
+  /// Хозяин личного питомца. У общего питомца пати — null (он принадлежит паре, см. Pair.petId)
+  userId      Int?
   figureCode  String
   level       Int       @default(1)
   xp          Int       @default(0)
@@ -511,11 +517,17 @@ model Pet {
   /// Последняя достигнутая стадия возраста (за новую дают монеты один раз)
   stage       Int       @default(0)
   lastPatAt   DateTime?
+  /// О каких нуждах бот уже напомнил: { food: true, clean: true, ... } — сбрасывается, когда нужда закрыта
+  notified    Json      @default("{}")
+  lastNotifyAt DateTime?
   createdAt   DateTime  @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pair Pair?
+  log  PetLog[]
 
   @@unique([userId, figureCode])
+  @@index([activeSince])
   @@map("pets")
 }
 
@@ -528,10 +540,13 @@ model GameRun {
   finishedAt DateTime?
   score      Int?
   coins      Int?
+  /// Игра за общего питомца пати (очки идут в командную цель дня)
+  pairId     Int?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, startedAt])
+  @@index([game, finishedAt])
   @@map("game_runs")
 }
 
@@ -581,4 +596,63 @@ model PromoClaim {
 
   @@unique([promoId, userId])
   @@map("promo_claims")
+}
+
+// ---------------------------------------------------------------- party: общий питомец на двоих
+
+/// Пати из двух игроков (пара или друзья) с общим питомцем. Игрок состоит максимум в одной пати.
+model Pair {
+  id         Int       @id @default(autoincrement())
+  /// "couple" — пара ❤️, "friends" — друзья 🤝 (меняет только оформление)
+  kind       String    @default("couple")
+  ownerId    Int
+  partnerId  Int?
+  /// Код приглашения: ссылка ?startapp=pair_<код> или ввод вручную. Меняется, когда место освобождается.
+  inviteCode String    @unique
+  petId      Int       @unique
+  /// Серия дней, когда о питомце позаботились оба
+  careStreak Int       @default(0)
+  createdAt  DateTime  @default(now())
+  joinedAt   DateTime?
+
+  owner   User  @relation("PairOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  partner User? @relation("PairPartner", fields: [partnerId], references: [id], onDelete: SetNull)
+  pet     Pet   @relation(fields: [petId], references: [id], onDelete: Cascade)
+  days    PairDay[]
+
+  @@index([ownerId])
+  @@index([partnerId])
+  @@map("pairs")
+}
+
+/// День пати (по Москве): кто заботился и сколько очков набрали в совместных играх
+model PairDay {
+  id            Int     @id @default(autoincrement())
+  pairId        Int
+  day           String  // YYYY-MM-DD
+  ownerCared    Boolean @default(false)
+  partnerCared  Boolean @default(false)
+  ownerPoints   Int     @default(0)
+  partnerPoints Int     @default(0)
+  teamRewarded  Boolean @default(false)
+
+  pair Pair @relation(fields: [pairId], references: [id], onDelete: Cascade)
+
+  @@unique([pairId, day])
+  @@map("pair_days")
+}
+
+/// Кто что делал с общим питомцем (последние записи видны обоим)
+model PetLog {
+  id        Int      @id @default(autoincrement())
+  petId     Int
+  userId    Int
+  action    String
+  createdAt DateTime @default(now())
+
+  pet  Pet  @relation(fields: [petId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([petId, createdAt])
+  @@map("pet_log")
 }

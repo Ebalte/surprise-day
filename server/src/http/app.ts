@@ -18,6 +18,8 @@ import { claimQuest, gameState, leaderboard, setFrame } from "../game/state.js";
 import { createEggInvoice } from "../game/shop.js";
 import { loadStory, saveStory } from "../game/stories.js";
 import { claimPromo, setStyle } from "../game/cosmetics.js";
+import { PAIR_KINDS, createPair, invitePreview, joinPair, leavePair, pairInviterRef } from "../game/pairs.js";
+import { gameLeaderboard, type Notice, type Target } from "../game/pets.js";
 import { FOOD, GAMES, buyFood, feedPet, finishGame, patPet, setActivePet, sleepPet, startGame, washPet, type FoodKey } from "../game/pets.js";
 import { getFlag } from "../settings/service.js";
 import { AdError, completeAdView, fetchAdMedia, pickAd, publicAd, registerAdClick, startAdView } from "../ads/service.js";
@@ -52,7 +54,9 @@ export function buildApp({ env, botApi, bot }: AppDeps) {
     let user: User | null = null;
     if (h.startsWith("tma ")) {
       const { user: tg, startParam } = verifyInitData(h.slice(4), env.BOT_TOKEN, env.INIT_DATA_MAX_AGE_SEC);
-      user = (await upsertTgUser(tg, startParam)).user;
+      // Новый игрок пришёл по приглашению в пати — пригласивший получает и реферала
+      const ref = startParam?.startsWith("pair_") ? await pairInviterRef(startParam.slice(5)) : startParam;
+      user = (await upsertTgUser(tg, ref)).user;
     } else if (h.startsWith("Bearer ")) {
       user = await prisma.user.findUnique({ where: { id: verifySession(h.slice(7), env.SESSION_SECRET) } });
     } else if (env.DEV_LOGIN && h.startsWith("Dev ")) {
@@ -144,14 +148,55 @@ export function buildApp({ env, botApi, bot }: AppDeps) {
   const food = z.enum(Object.keys(FOOD) as [FoodKey, ...FoodKey[]]);
   app.post("/api/pet/active", async (req) => { await notInMaintenance(); return setActivePet(req.user.id, body(z.object({ code: z.string() }), req).code); });
   app.post("/api/pet/buy", async (req) => { await notInMaintenance(); return buyFood(req.user.id, body(z.object({ item: food }), req).item); });
-  app.post("/api/pet/feed", async (req) => { await notInMaintenance(); return feedPet(req.user.id, body(z.object({ item: food }), req).item); });
-  app.post("/api/pet/wash", async (req) => { await notInMaintenance(); return washPet(req.user.id); });
-  app.post("/api/pet/pat", async (req) => patPet(req.user.id));
-  app.post("/api/pet/sleep", async (req) => { await notInMaintenance(); return sleepPet(req.user.id, body(z.object({ asleep: z.boolean() }), req).asleep); });
-  app.post("/api/games/start", async (req) => { await notInMaintenance(); return startGame(req.user.id, body(z.object({ game: z.enum(GAMES) }), req).game); });
-  app.post("/api/games/:id/finish", async (req) => finishGame(req.user.id, id(req), body(z.object({ score: z.number().int().min(0).max(100000) }), req).score));
+  // pet: "own" — свой главный питомец, "pair" — общий питомец пати
+  const target = z.enum(["own", "pair"]).default("own");
+  /** Ответ на действие с питомцем; уведомления второму игроку пати уходят от бота */
+  const send = <T extends { notices: Notice[] }>(r: T) => { r.notices.forEach((n) => notify(n.userId, n.text)); const { notices: _n, ...rest } = r; return rest; };
+  app.post("/api/pet/feed", async (req) => {
+    await notInMaintenance();
+    const b = body(z.object({ item: food, pet: target }), req);
+    return send(await feedPet(req.user.id, b.item, b.pet as Target));
+  });
+  app.post("/api/pet/wash", async (req) => { await notInMaintenance(); return send(await washPet(req.user.id, body(z.object({ pet: target }), req).pet as Target)); });
+  app.post("/api/pet/pat", async (req) => send(await patPet(req.user.id, body(z.object({ pet: target }), req).pet as Target)));
+  app.post("/api/pet/sleep", async (req) => {
+    await notInMaintenance();
+    const b = body(z.object({ asleep: z.boolean(), pet: target }), req);
+    return send(await sleepPet(req.user.id, b.asleep, b.pet as Target));
+  });
+  app.post("/api/games/start", async (req) => {
+    await notInMaintenance();
+    const b = body(z.object({ game: z.enum(GAMES), pet: target }), req);
+    return send(await startGame(req.user.id, b.game, b.pet as Target));
+  });
+  app.post("/api/games/:id/finish", async (req) => send(await finishGame(req.user.id, id(req), body(z.object({ score: z.number().int().min(0).max(100000) }), req).score)));
+  app.get("/api/games/:game/leaderboard", async (req) => gameLeaderboard(req.user.id, z.enum(GAMES).parse((req.params as { game: string }).game)));
+  app.post("/api/notifications/pet", async (req) => {
+    await prisma.user.update({ where: { id: req.user.id }, data: { petNotify: body(z.object({ enabled: z.boolean() }), req).enabled } });
+    return { ok: true };
+  });
 
-  // Стиль питомца и ссылки-подарки
+  // ---------- пати: общий питомец на двоих ----------
+  const code = z.string().trim().min(4).max(16);
+  app.post("/api/pair/create", async (req) => {
+    await notInMaintenance();
+    const b = body(z.object({ code: z.string(), kind: z.enum(PAIR_KINDS) }), req);
+    const pair = await createPair(req.user.id, b.code, b.kind);
+    return { inviteCode: pair.inviteCode };
+  });
+  app.get("/api/pair/invite/:code", async (req) => invitePreview(req.user.id, code.parse((req.params as { code: string }).code)));
+  app.post("/api/pair/join", async (req) => {
+    await notInMaintenance();
+    const r = await joinPair(req.user.id, body(z.object({ code }), req).code);
+    if (!r.already) notify(r.pair.ownerId, `💞 ${displayName(req.user)} теперь с вами в пати! Ухаживайте за общим питомцем вместе.`);
+    return { ok: true };
+  });
+  app.post("/api/pair/leave", async (req) => {
+    const r = await leavePair(req.user.id);
+    if (r.remaining) notify(r.remaining, `${displayName(req.user)} вышел(ла) из пати. Общий питомец остался с вами — можно позвать кого-то нового.`);
+    return { ok: true };
+  });
+
   app.post("/api/pet/style", async (req) => {
     const { outfit, room } = body(z.object({ outfit: z.string().max(32).nullable(), room: z.string().max(32).nullable() }), req);
     return setStyle(req.user.id, outfit, room);

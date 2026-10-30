@@ -3,12 +3,13 @@ import { api, isLoggedIn, type ApiError, type GameState } from "./api";
 import { GameCtx, useToast, type Game } from "./ui";
 import { inTelegram } from "./tg";
 import { PromoGift, pendingPromo } from "./screens/PromoGift";
+import { PairInvite, pendingPairInvite } from "./screens/PairInvite";
 import { Login } from "./Login";
 import { EggScreen } from "./screens/EggScreen";
 import { CollectionScreen } from "./screens/CollectionScreen";
 import { FriendsScreen } from "./screens/FriendsScreen";
 import { ProfileScreen } from "./screens/ProfileScreen";
-import { PetScreen, livePet, needsCare } from "./screens/PetScreen";
+import { PetScreen, livePairPet, livePet, needsCare } from "./screens/PetScreen";
 
 const TABS = [
   { id: "pet", label: "Питомец", icon: <><path d="M3 11.5 12 4l9 7.5" /><path d="M5.5 10v10h13V10" /><path d="M12 17.5s-3-1.8-3-3.6a1.6 1.6 0 0 1 3-.8 1.6 1.6 0 0 1 3 .8c0 1.8-3 3.6-3 3.6z" /></> },
@@ -34,6 +35,7 @@ function Game() {
   const skew = useRef(0);
   const { toast, node: toastNode } = useToast();
   const [hasPromo] = useState(pendingPromo);
+  const [hasInvite] = useState(pendingPairInvite);
 
   const refresh = useCallback(async () => {
     try {
@@ -81,6 +83,7 @@ function Game() {
           {tab === "profile" && <ProfileScreen />}
         </main>
         {hasPromo && <PromoGift />}
+        {hasInvite && <PairInvite />}
       </div>
       <nav className="nav" aria-label="Разделы">
         <div className="nav-inner">
@@ -88,7 +91,7 @@ function Game() {
             <a key={t.id} href={`#${t.id}`} aria-current={tab === t.id ? "page" : undefined}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{t.icon}</svg>
               {t.label}
-              {t.id === "pet" && tab !== "pet" && needsCare(livePet(state!, game.now())) && <i className="dotn" />}
+              {t.id === "pet" && tab !== "pet" && (needsCare(livePet(state!, game.now())) || needsCare(livePairPet(state!, game.now()))) && <i className="dotn" />}
               {t.id === "egg" && eggReady && tab !== "egg" && <i className="dotn" />}
               {t.id === "friends" && inbox > 0 && <i className="dotn" />}
             </a>

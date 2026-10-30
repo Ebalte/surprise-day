@@ -76,6 +76,18 @@ export type GameState = {
   frames: { code: string; title: string; color: string | null }[];
   refLink: string;
   pet: PetState;
+  pair: PairState | null;
+};
+
+/** Пати: общий питомец на двоих */
+export type PairState = {
+  id: number; kind: "couple" | "friends"; role: "owner" | "partner";
+  partner: { name: string; photoUrl: string | null } | null;
+  inviteCode: string | null; inviteLink: string | null;
+  pet: PetDto;
+  log: { name: string; action: string; at: string }[];
+  today: { meCared: boolean; mateCared: boolean; myPoints: number; matePoints: number; goal: number; rewarded: boolean };
+  careStreak: number;
 };
 
 export type PetDto = { code: string; level: number; xp: number; needXp: number; food: number; mood: number; clean: number; energy: number; asleep: boolean; ageMs: number; stage: number; active: boolean };
@@ -86,9 +98,12 @@ export type PetState = {
   pets: PetDto[]; config: { stages: PetStage[]; foods: Record<string, FoodDto>; energyCost: number };
   /** Стили из ссылок-подарков: owned — ["outfit:metal", "room:metal"] */
   style: { owned: string[]; outfit: string | null; room: string | null };
+  /** Напоминания бота о питомце */
+  notify: boolean;
 };
 /** Ответ на действие с питомцем: обновлённый питомец и сообщения (новый уровень, подрос) */
 export type PetAction<T = object> = { result: T; pet: PetDto; messages: string[] };
+export type DayBoard = { rows: { place: number; name: string; score: number; you: boolean; partner: boolean }[]; me: { place: number; score: number } | null; total: number };
 
 export type OpenResult = {
   figure: FigureDto; isNew: boolean; count: number; shards: number; pity: boolean;

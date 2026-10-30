@@ -25,6 +25,10 @@ export function ProfileScreen() {
     try { await post("/api/notifications", { enabled }); await refresh(); toast(enabled ? "Бот напишет, когда яйцо будет готово" : "Уведомления выключены"); }
     catch (e) { toast((e as ApiError).message); }
   };
+  const togglePetNotify = async (enabled: boolean) => {
+    try { await post("/api/notifications/pet", { enabled }); await refresh(); toast(enabled ? "Бот напомнит, когда питомцу что-то нужно" : "Напоминания о питомце выключены"); }
+    catch (e) { toast((e as ApiError).message); }
+  };
   const chooseFrame = async (code: string) => {
     try { await post("/api/frame", { code: s.me.activeFrame === code ? null : code }); await refresh(); }
     catch (e) { toast((e as ApiError).message); }
@@ -123,6 +127,8 @@ export function ProfileScreen() {
       <div className="panel">
         <label className="switch" htmlFor="notify"><span><b>Уведомления в Telegram</b><br /><span className="muted">Бот напишет, когда новое яйцо готово</span></span>
           <input type="checkbox" id="notify" checked={s.me.notificationsEnabled} onChange={(e) => toggleNotify(e.target.checked)} /></label>
+        <label className="switch" htmlFor="pet-notify"><span><b>Напоминания о питомце</b><br /><span className="muted">{s.me.notificationsEnabled ? "Хочет есть, в ванну, скучает, хочет спать. Ночью бот молчит" : "Сначала включите уведомления в Telegram"}</span></span>
+          <input type="checkbox" id="pet-notify" disabled={!s.me.notificationsEnabled} checked={s.me.notificationsEnabled && s.pet.notify} onChange={(e) => void togglePetNotify(e.target.checked)} /></label>
       </div>
       {!inTelegram && <button className="btn ghost" onClick={() => { logout(); location.reload(); }}>Выйти</button>}
     </section>
