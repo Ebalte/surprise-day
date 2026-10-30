@@ -485,3 +485,35 @@ body { margin: 0; }
 .story img { width: 100%; max-width: 260px; border-radius: 18px; box-shadow: var(--shadow); }
 .shop-item > div { min-width: 0; }
 .sheet .game-card .muted, .sheet .shop-item { text-align: left; }
+
+/* ---------- комната «Металлист» (ссылка-подарок) ---------- */
+.room.theme-metal {
+  background:
+    repeating-linear-gradient(0deg, rgba(0,0,0,.45) 0 2px, transparent 2px 24px),
+    repeating-linear-gradient(90deg, rgba(0,0,0,.35) 0 2px, transparent 2px 48px),
+    linear-gradient(#3A2A30, #1C1518);
+}
+.room.theme-metal::after { background: repeating-linear-gradient(45deg, #2E2E34 0 9px, #222226 9px 18px); border-top: 3px solid #4A4A52; }
+.room.theme-metal .lights {
+  position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background: radial-gradient(ellipse 40% 60% at 15% 0%, rgba(255,40,60,.45), transparent 70%), radial-gradient(ellipse 40% 60% at 85% 0%, rgba(150,60,255,.4), transparent 70%);
+  animation: stage 3s ease-in-out infinite alternate;
+}
+@keyframes stage { to { opacity: .55; } }
+.room.theme-metal .poster {
+  position: absolute; top: 16px; right: 18px; z-index: 1; width: 70px; padding: 6px 4px; rotate: 6deg;
+  background: #111; border: 2px solid #E53935; color: #FF4B4B; text-align: center;
+  font-family: var(--f-display); font-weight: 800; font-size: 13px; letter-spacing: .08em; line-height: 1.1; box-shadow: 0 6px 14px rgba(0,0,0,.5);
+}
+.room.theme-metal .poster span { display: block; font-size: 26px; }
+.room.theme-metal .amp {
+  position: absolute; bottom: 10%; z-index: 2; width: 54px; height: 82px; border-radius: 6px;
+  background: #18181B; border: 3px solid #3A3A40; display: flex; flex-direction: column; align-items: center; justify-content: space-evenly;
+  box-shadow: 0 8px 14px rgba(0,0,0,.45);
+}
+.room.theme-metal .amp.l { left: 12px; } .room.theme-metal .amp.r { right: 12px; }
+.room.theme-metal .amp i { width: 34px; height: 34px; border-radius: 50%; background: radial-gradient(circle, #555 0 18%, #0B0B0D 20% 55%, #2C2C31 57% 100%); }
+.room.theme-metal .amp i:last-child { width: 22px; height: 22px; }
+.room.theme-metal.night .lights { opacity: .3; animation: none; }
+.gift-room { align-self: stretch; height: 220px; }
+.gift-room .pet-wrap { width: 150px; }

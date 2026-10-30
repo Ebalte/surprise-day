@@ -17,6 +17,7 @@ import { claimGift, displayName, friendsView, proposeTrade, respondTrade, sendGi
 import { claimQuest, gameState, leaderboard, setFrame } from "../game/state.js";
 import { createEggInvoice } from "../game/shop.js";
 import { loadStory, saveStory } from "../game/stories.js";
+import { claimPromo, setStyle } from "../game/cosmetics.js";
 import { FOOD, GAMES, buyFood, feedPet, finishGame, patPet, setActivePet, sleepPet, startGame, washPet, type FoodKey } from "../game/pets.js";
 import { getFlag } from "../settings/service.js";
 import { AdError, completeAdView, fetchAdMedia, pickAd, publicAd, registerAdClick, startAdView } from "../ads/service.js";
@@ -149,6 +150,13 @@ export function buildApp({ env, botApi, bot }: AppDeps) {
   app.post("/api/pet/sleep", async (req) => { await notInMaintenance(); return sleepPet(req.user.id, body(z.object({ asleep: z.boolean() }), req).asleep); });
   app.post("/api/games/start", async (req) => { await notInMaintenance(); return startGame(req.user.id, body(z.object({ game: z.enum(GAMES) }), req).game); });
   app.post("/api/games/:id/finish", async (req) => finishGame(req.user.id, id(req), body(z.object({ score: z.number().int().min(0).max(100000) }), req).score));
+
+  // Стиль питомца и ссылки-подарки
+  app.post("/api/pet/style", async (req) => {
+    const { outfit, room } = body(z.object({ outfit: z.string().max(32).nullable(), room: z.string().max(32).nullable() }), req);
+    return setStyle(req.user.id, outfit, room);
+  });
+  app.post("/api/promo/claim", async (req) => { await notInMaintenance(); return claimPromo(req.user.id, body(z.object({ code: z.string().regex(/^[a-z0-9]{4,32}$/) }), req).code); });
 
   // Картинка сторис: загрузка игроком и публичная раздача для Telegram
   app.post("/api/stories", { bodyLimit: 2_500_000 }, async (req) => saveStory(req.user.id, body(z.object({ image: z.string().max(2_400_000) }), req).image));

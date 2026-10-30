@@ -3,7 +3,7 @@ import { post, type ApiError, type FigureDto, type GameState, type PetAction, ty
 import { EGG_SVG, Fig, Sheet, useGame, useTick } from "../ui";
 import { haptic } from "../tg";
 import { DAY, HOUR, plural, RLABEL } from "../util";
-import { PetArt, type Expr } from "../pet/art";
+import { PetArt, STYLE_NAMES, type Expr } from "../pet/art";
 import { GAMES, GameRunner, type GameId } from "../pet/games";
 
 const clamp = (v: number) => Math.max(0, Math.min(100, v));
@@ -50,7 +50,7 @@ export function PetScreen() {
   const { state: s, now, toast, refresh } = useGame();
   useTick(10_000);
   const [say, setSay] = useState<string | null>(null);
-  const [sheet, setSheet] = useState<"feed" | "games" | null>(null);
+  const [sheet, setSheet] = useState<"feed" | "games" | "style" | null>(null);
   const [game, setGame] = useState<GameId | null>(null);
   const [washing, setWashing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -104,11 +104,11 @@ export function PetScreen() {
         <div><h1 style={{ fontSize: 20 }}>{f.name}</h1><p className="muted">{RLABEL[f.rarity]} · уровень {p.level}</p></div>
         <span className="pill num"><i className="coin" />{s.pet.coins}</span>
       </div>
-      <div className={`room ${p.asleep ? "night" : ""}`} ref={room}>
-        <div className="window" />
+      <div className={`room ${p.asleep ? "night" : ""} ${s.pet.style.room ? `theme-${s.pet.style.room}` : ""}`} ref={room}>
+        {s.pet.style.room === "metal" ? <RoomMetal /> : <div className="window" />}
         <div className="pbubble">{washing ? "Ой, щекотно!" : say ?? wish(p)}</div>
         <div className={`pet-wrap ${p.asleep ? "sleep" : "idle"}`} style={{ transform: `scale(${st.scale})` }} onPointerDown={pat}>
-          <div key={jump} className={jump ? "jumper jump" : "jumper"}><PetArt f={f} expr={exprOf(p)} level={p.level} /></div>
+          <div key={jump} className={jump ? "jumper jump" : "jumper"}><PetArt f={f} expr={exprOf(p)} level={p.level} outfit={s.pet.style.outfit} /></div>
         </div>
         {p.asleep && <div className="zzz">z Z z</div>}
         {fx.map((z) => <div key={z.id} className="fx" style={{ left: z.x, top: z.y }}>{z.t}</div>)}
@@ -142,6 +142,7 @@ export function PetScreen() {
         <button className="act" disabled={p.asleep || busy} onClick={() => setSheet("games")}><span>🎮</span>Играть</button>
         <button className="act" disabled={busy} onClick={sleep}><span>{p.asleep ? "☀️" : "🌙"}</span>{p.asleep ? "Разбудить" : "Спать"}</button>
       </div>
+      <button className="btn ghost" onClick={() => setSheet("style")}>👕 Стиль питомца{s.pet.style.owned.length ? "" : " · скоро"}</button>
       <p className="pnote">Погладьте питомца, коснувшись его. Сменить питомца можно в «Коллекции».</p>
 
       {sheet === "feed" && (
@@ -167,6 +168,7 @@ export function PetScreen() {
           </div>
         </Sheet>
       )}
+      {sheet === "style" && <StyleSheet onClose={() => setSheet(null)} />}
       {sheet === "games" && (
         <Sheet onClose={() => setSheet(null)}>
           <h2>Во что поиграем?</h2>
@@ -187,6 +189,50 @@ export function PetScreen() {
       )}
       {game && <GameRunner game={game} pet={f} level={p.level} onClose={() => setGame(null)} />}
     </section>
+  );
+}
+
+/** Оформление комнаты «Металлист»: постер, колонки, прожекторы */
+export function RoomMetal() {
+  return (
+    <>
+      <div className="lights" aria-hidden="true" />
+      <div className="poster" aria-hidden="true"><span>🤘</span>ROCK</div>
+      <div className="amp l" aria-hidden="true"><i /><i /></div>
+      <div className="amp r" aria-hidden="true"><i /><i /></div>
+    </>
+  );
+}
+
+/** Наряды и оформление комнаты из ссылок-подарков */
+function StyleSheet({ onClose }: { onClose: () => void }) {
+  const { state: s, toast, refresh } = useGame();
+  const [busy, setBusy] = useState(false);
+  const st = s.pet.style;
+  const owned = (kind: "outfit" | "room") => st.owned.filter((x) => x.startsWith(kind + ":")).map((x) => x.slice(kind.length + 1));
+  const set = async (outfit: string | null, room: string | null) => {
+    setBusy(true);
+    try { await post("/api/pet/style", { outfit, room }); await refresh(); } catch (e) { toast((e as ApiError).message); } finally { setBusy(false); }
+  };
+  const row = (kind: "outfit" | "room", title: string, none: string) => (
+    <div style={{ alignSelf: "stretch", textAlign: "left", display: "flex", flexDirection: "column", gap: 8 }}>
+      <b>{title}</b>
+      <div className="frames">
+        {[null, ...owned(kind)].map((code) => (
+          <button key={code ?? "none"} className="frame-btn" disabled={busy} aria-pressed={st[kind] === code}
+            onClick={() => kind === "outfit" ? void set(code, st.room) : void set(st.outfit, code)}>
+            {code ? STYLE_NAMES[kind][code] ?? code : none}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+  return (
+    <Sheet onClose={onClose}>
+      <h2>Стиль питомца</h2>
+      {st.owned.length ? (<>{row("outfit", "Наряд", "Без наряда")}{row("room", "Комната", "Обычная")}</>)
+        : <p className="muted">Наряды и оформление комнаты дарят по особым ссылкам. Следите за новостями игры: там бывают ссылки-подарки.</p>}
+    </Sheet>
   );
 }
 

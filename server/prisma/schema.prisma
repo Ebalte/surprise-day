@@ -140,6 +140,11 @@ model User {
   /// Рекорды мини-игр: { tower: 12, asmr: 90 }
   gameBest    Json    @default("{}")
   gamesPlayed Int     @default(0)
+  /// Полученные стили питомца (наряды и комнаты): ["outfit:metal", "room:metal"]
+  cosmetics   Json    @default("[]")
+  /// Что сейчас надето и как оформлена комната (null — обычный вид)
+  petOutfit   String?
+  roomTheme   String?
 
   /// Пользователь включил уведомления на сайте и разрешил боту писать в личку
   /// (галочка при входе через виджет или /start в боте)
@@ -174,6 +179,7 @@ model User {
   pets           Pet[]
   gameRuns       GameRun[]
   stories        StoryImage[]
+  promoClaims    PromoClaim[]
 
   @@index([notificationsEnabled, lastFreeEggAt])
   @@map("users")
@@ -541,4 +547,38 @@ model StoryImage {
   @@index([userId, createdAt])
   @@index([createdAt])
   @@map("story_images")
+}
+
+// ---------------------------------------------------------------- promo links
+
+/// Ссылка-подарок из админ-бота: даёт набор стилей питомца. Получить её может и новый, и старый игрок, каждый — один раз.
+model PromoLink {
+  id        Int      @id @default(autoincrement())
+  /// Код в ссылке: ?startapp=promo_<code>
+  code      String   @unique
+  /// Что даёт (ключ из PROMO_PACKS в server/src/game/cosmetics.ts)
+  pack      String
+  /// Сколько раз можно получить всего (null — без ограничения)
+  maxUses   Int?
+  uses      Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdBy BigInt
+  createdAt DateTime @default(now())
+
+  claims PromoClaim[]
+
+  @@map("promo_links")
+}
+
+model PromoClaim {
+  id        Int      @id @default(autoincrement())
+  promoId   Int
+  userId    Int
+  createdAt DateTime @default(now())
+
+  promo PromoLink @relation(fields: [promoId], references: [id], onDelete: Cascade)
+  user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([promoId, userId])
+  @@map("promo_claims")
 }

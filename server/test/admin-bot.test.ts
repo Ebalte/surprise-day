@@ -335,3 +335,23 @@ test("события: запуск сейчас, продление, остан�
   assert.equal(back.startsAt, cfg.startsAt);
   assert.equal(back.endsAt, cfg.endsAt);
 });
+
+test("ссылка-подарок: создание с лимитом, изменение лимита, выключение", async () => {
+  await prisma.promoLink.deleteMany({ where: { createdBy: BigInt(ADMIN) } });
+  await tap("promo");
+  assert.match(lastText(), /Ссылки-подарки/);
+  await tap("promo.new");
+  await tap("promo.pack:metal");
+  await send("сто");
+  assert.match(lastText(), /целое число/);
+  await send("2");
+  const p = await prisma.promoLink.findFirstOrThrow({ where: { createdBy: BigInt(ADMIN) } });
+  assert.equal(p.maxUses, 2);
+  assert.match(lastText(), new RegExp(`https://t\\.me/tuktuk_egg_bot/tuktuk_egg\\?startapp=promo_${p.code}`));
+  await tap(`promo.lim:${p.id}`);
+  await send("0");
+  assert.equal((await prisma.promoLink.findUniqueOrThrow({ where: { id: p.id } })).maxUses, null);
+  await tap(`promo.toggle:${p.id}`);
+  assert.equal((await prisma.promoLink.findUniqueOrThrow({ where: { id: p.id } })).isActive, false);
+  await prisma.promoLink.deleteMany({ where: { createdBy: BigInt(ADMIN) } });
+});

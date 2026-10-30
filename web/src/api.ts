@@ -84,6 +84,8 @@ export type FoodDto = { emoji: string; name: string; price: number; food: number
 export type PetState = {
   active: string | null; coins: number; food: Record<string, number>; gameBest: Record<string, number>; gamesPlayed: number;
   pets: PetDto[]; config: { stages: PetStage[]; foods: Record<string, FoodDto>; energyCost: number };
+  /** Стили из ссылок-подарков: owned — ["outfit:metal", "room:metal"] */
+  style: { owned: string[]; outfit: string | null; room: string | null };
 };
 /** Ответ на действие с питомцем: обновлённый питомец и сообщения (новый уровень, подрос) */
 export type PetAction<T = object> = { result: T; pet: PetDto; messages: string[] };

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, isLoggedIn, type ApiError, type GameState } from "./api";
 import { GameCtx, useToast, type Game } from "./ui";
 import { inTelegram } from "./tg";
+import { PromoGift, pendingPromo } from "./screens/PromoGift";
 import { Login } from "./Login";
 import { EggScreen } from "./screens/EggScreen";
 import { CollectionScreen } from "./screens/CollectionScreen";
@@ -32,6 +33,7 @@ function Game() {
   const [inbox, setInbox] = useState(0);
   const skew = useRef(0);
   const { toast, node: toastNode } = useToast();
+  const [hasPromo] = useState(pendingPromo);
 
   const refresh = useCallback(async () => {
     try {
@@ -78,6 +80,7 @@ function Game() {
           {tab === "friends" && <FriendsScreen onInbox={setInbox} />}
           {tab === "profile" && <ProfileScreen />}
         </main>
+        {hasPromo && <PromoGift />}
       </div>
       <nav className="nav" aria-label="Разделы">
         <div className="nav-inner">

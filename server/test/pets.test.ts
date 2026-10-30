@@ -114,3 +114,20 @@ test("сторис: загрузка JPEG и публичная ссылка б�
   assert.equal((await app.inject({ method: "GET", url: "/api/stories/../../etc.jpg" })).statusCode, 404);
   assert.equal((await app.inject({ method: "POST", url: "/api/stories", payload: { image: "x" } })).statusCode, 401);
 });
+
+test("ссылка-подарок: получают и старые игроки, каждый один раз, не больше лимита", async () => {
+  const promo = await prisma.promoLink.create({ data: { code: "testmetal1", pack: "metal", maxUses: 2, createdBy: 1n } });
+  for (const n of [6, 7, 8]) await call(n, "GET", "/api/state");
+  const ok = await call(6, "POST", "/api/promo/claim", { code: "testmetal1" });
+  assert.equal(ok.status, 200);
+  const s = (await call(6, "GET", "/api/state")).body;
+  assert.deepEqual(s.pet.style, { owned: ["outfit:metal", "room:metal"], outfit: "metal", room: "metal" });
+  assert.equal((await call(6, "POST", "/api/promo/claim", { code: "testmetal1" })).status, 409); // второй раз нельзя
+  assert.equal((await call(7, "POST", "/api/promo/claim", { code: "testmetal1" })).status, 200);
+  assert.equal((await call(8, "POST", "/api/promo/claim", { code: "testmetal1" })).status, 410); // лимит 2
+  assert.equal((await call(8, "POST", "/api/promo/claim", { code: "nosuchcode" })).status, 404);
+  // Снять и снова надеть можно только полученное
+  assert.equal((await call(6, "POST", "/api/pet/style", { outfit: null, room: "metal" })).status, 200);
+  assert.equal((await call(8, "POST", "/api/pet/style", { outfit: "metal", room: null })).status, 400);
+  await prisma.promoLink.delete({ where: { id: promo.id } });
+});

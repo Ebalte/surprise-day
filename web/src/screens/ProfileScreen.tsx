@@ -62,7 +62,7 @@ export function ProfileScreen() {
         {pet && petFig ? (
           <>
             <a className="pet-mini" href="#pet" style={{ color: "inherit", textDecoration: "none" }}>
-              <PetArt f={petFig} expr="happy" level={pet.level} />
+              <PetArt f={petFig} expr="happy" level={pet.level} outfit={s.pet.style.outfit} />
               <span><b>{petFig.name}</b><br /><span className="muted">{s.pet.config.stages[pet.stage].emoji} {s.pet.config.stages[pet.stage].name} · {ageText(pet.ageMs)} · уровень {pet.level}</span></span>
             </a>
             <div className="stats">

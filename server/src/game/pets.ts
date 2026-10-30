@@ -6,6 +6,7 @@
 import type { Pet, Prisma, User } from "@prisma/client";
 import { prisma } from "../db.js";
 import { GameError, lockUsers } from "./core.js";
+import { cosmeticsState } from "./cosmetics.js";
 
 type Tx = Prisma.TransactionClient;
 const HOUR = 3600_000, DAY = 24 * HOUR;
@@ -85,6 +86,7 @@ export async function petState(user: User, now = new Date()) {
     // Показатели главного питомца досчитываем на лету (в БД они обновятся при следующем действии)
     pets: pets.map((p) => { if (p.activeSince) tick(p, now); return petView(p, now); }),
     config: { stages: STAGES, foods: FOOD, energyCost: ENERGY_COST },
+    style: cosmeticsState(user),
   };
 }
 

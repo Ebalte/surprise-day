@@ -45,7 +45,8 @@ export function sfx(kind: "pop" | "squish" | "ping" | "thump") {
 type Finish = { score: number; coins: number; xp: number; record: boolean };
 
 export function GameRunner({ game, pet, level, onClose }: { game: GameId; pet: FigureDto; level: number; onClose: () => void }) {
-  const { toast, refresh } = useGame();
+  const { state: gs, toast, refresh } = useGame();
+  const outfit = gs.pet.style.outfit;
   const [run, setRun] = useState<{ id: number; key: number } | null>(null);
   const [score, setScore] = useState(0);
   const [result, setResult] = useState<Finish | null>(null);
@@ -80,7 +81,7 @@ export function GameRunner({ game, pet, level, onClose }: { game: GameId; pet: F
     return (
       <div className="layer center">
         <div className="pcard" role="dialog" aria-modal="true">
-          <div className="pic"><PetArt f={pet} expr="happy" level={level} /></div>
+          <div className="pic"><PetArt f={pet} expr="happy" level={level} outfit={outfit} /></div>
           <h2>{result.record ? "Новый рекорд!" : "Игра окончена"}</h2>
           <p>Очки: <b className="num">{result.score}</b></p>
           <p><span className="pill num"><i className="coin" />+{result.coins}</span> <span className="pill num">+{result.xp} опыта</span></p>
@@ -107,7 +108,7 @@ export function GameRunner({ game, pet, level, onClose }: { game: GameId; pet: F
       </div>
       <div className="game-body">
         {run && (game === "tower"
-          ? <Tower key={run.key} pet={pet} level={level} onScore={setScore} onEnd={(s) => void end(s)} />
+          ? <Tower key={run.key} pet={pet} level={level} outfit={outfit} onScore={setScore} onEnd={(s) => void end(s)} />
           : <Asmr key={run.key} onScore={setScore} onEnd={(s) => void end(s)} />)}
         {!run && <div className="spinner" aria-label="Загрузка" />}
       </div>
@@ -123,7 +124,7 @@ function StorySheet({ game, score, record, pet, level, onClose }: { game: (typeo
   const [busy, setBusy] = useState(false);
   const bot = /t\.me\/([^/?]+)/.exec(s.refLink)?.[1];
   useEffect(() => useBackButton(onClose), [onClose]);
-  useEffect(() => { void storyCard(game, score, record, pet, level, bot).then(setUrl); }, []);
+  useEffect(() => { void storyCard(game, score, record, pet, level, bot, s.pet.style.outfit).then(setUrl); }, []);
   const text = `${game.emoji} ${record ? "Мой рекорд" : "Мой результат"} в «${game.name}»: ${score}! Сможешь больше?`;
   // Telegram берёт картинку сторис по ссылке, поэтому сначала кладём именно эту карточку на сервер
   const publish = async () => {
@@ -150,9 +151,9 @@ function StorySheet({ game, score, record, pet, level, onClose }: { game: (typeo
 }
 
 /** Карточка 9:16 (JPEG): питомец, счёт и куда идти играть */
-async function storyCard(game: (typeof GAMES)[number], score: number, record: boolean, pet: FigureDto, level: number, bot?: string) {
+async function storyCard(game: (typeof GAMES)[number], score: number, record: boolean, pet: FigureDto, level: number, bot?: string, outfit?: string | null) {
   const cv = document.createElement("canvas"); cv.width = 1080; cv.height = 1920;
-  const c = cv.getContext("2d")!, img = await petImage(pet, "happy", level);
+  const c = cv.getContext("2d")!, img = await petImage(pet, "happy", level, outfit);
   c.scale(1.5, 1.5);
   const bg = c.createLinearGradient(0, 0, 720, 1280); bg.addColorStop(0, "#FF7A1A"); bg.addColorStop(0.55, "#FF5E9A"); bg.addColorStop(1, "#8B5CF6");
   c.fillStyle = bg; c.fillRect(0, 0, 720, 1280);
@@ -182,7 +183,7 @@ const KINDS = [
 ];
 
 /** Роняем сладости на тарелку; если сладость свесилась больше чем наполовину или центр тяжести башни ушёл за край — конец */
-function Tower({ pet, level, onScore, onEnd }: { pet: FigureDto; level: number; onScore: (n: number) => void; onEnd: (score: number) => void }) {
+function Tower({ pet, level, outfit, onScore, onEnd }: { pet: FigureDto; level: number; outfit: string | null; onScore: (n: number) => void; onEnd: (score: number) => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const cv = ref.current!, ctx = cv.getContext("2d")!, dpr = devicePixelRatio || 1;
@@ -194,7 +195,7 @@ function Tower({ pet, level, onScore, onEnd }: { pet: FigureDto; level: number; 
     let cur!: Block, dir = 1, fallY = 0, vy = 0, jumpT = 0, tilt = 0;
     let lost: (Block & { y: number; vy: number; dir: number }) | null = null;
     let img: HTMLImageElement | null = null;
-    void petImage(pet, "happy", level).then((i) => { img = i; });
+    void petImage(pet, "happy", level, outfit).then((i) => { img = i; });
     const texts: { t: string; x: number; y: number; life: number }[] = [];
     const say = (t: string, x: number, y: number) => texts.push({ t, x, y, life: 1 });
     const swing = () => Math.min(W / 2 - cur.w / 2, 70 + stack.length * 4);
