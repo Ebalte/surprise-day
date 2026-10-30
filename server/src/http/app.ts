@@ -204,7 +204,10 @@ export function buildApp({ env, botApi, bot }: AppDeps) {
   app.post("/api/promo/claim", async (req) => { await notInMaintenance(); return claimPromo(req.user.id, body(z.object({ code: z.string().regex(/^[a-z0-9]{4,32}$/) }), req).code); });
 
   // Картинка сторис: загрузка игроком и публичная раздача для Telegram
-  app.post("/api/stories", { bodyLimit: 2_500_000 }, async (req) => saveStory(req.user.id, body(z.object({ image: z.string().max(2_400_000) }), req).image));
+  app.post("/api/stories", { bodyLimit: 2_500_000 }, async (req) => {
+    const b = body(z.object({ image: z.string().max(2_400_000), runId: z.number().int().positive().optional() }), req);
+    return saveStory(req.user.id, b.image, b.runId);
+  });
   app.get("/api/stories/:file", async (req, reply: FastifyReply) => {
     const story = await loadStory(((req.params as { file: string }).file).replace(/\.jpg$/, ""));
     if (!story) return reply.status(404).send();

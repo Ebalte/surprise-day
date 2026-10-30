@@ -46,7 +46,7 @@ export function sfx(kind: "pop" | "squish" | "ping" | "thump" | "beat") {
 
 // ---------------------------------------------------------------- оболочка игры
 
-type Finish = { score: number; coins: number; xp: number; record: boolean; team: { points: number; total: number; done: boolean } | null };
+type Finish = { runId: number; score: number; coins: number; xp: number; record: boolean; team: { points: number; total: number; done: boolean } | null };
 type GameProps = { pet: FigureDto; level: number; outfit: string | null; onScore: (n: number) => void; onEnd: (score: number) => void };
 
 export function GameRunner({ game, pet, level, target = "own", onClose }: { game: GameId; pet: FigureDto; level: number; target?: "own" | "pair"; onClose: () => void }) {
@@ -95,13 +95,13 @@ export function GameRunner({ game, pet, level, target = "own", onClose }: { game
           <p className="muted">Настроение питомца +15</p>
           {result.team && <p className="team-line">🏆 В командную цель: +{result.team.points} · {result.team.done ? "цель дня выполнена!" : `${result.team.total}/${gs.pair?.today.goal ?? 300}`}</p>}
           <DayRating board={board} />
-          <button className="btn" style={{ width: "100%" }} onClick={() => setStory(true)}>📲 Поделиться в сторис</button>
+          <button className="btn" style={{ width: "100%" }} onClick={() => setStory(true)}>📲 Поделиться в сторис{result.record ? " · 🥚" : ""}</button>
           <div className="btn-row" style={{ width: "100%" }}>
             <button className="btn ghost" onClick={() => void start()}>Ещё раз</button>
             <button className="btn ghost" onClick={onClose}>Готово</button>
           </div>
         </div>
-        {story && <StorySheet game={meta} score={result.score} record={result.record} pet={pet} level={level} onClose={() => setStory(false)} />}
+        {story && <StorySheet game={meta} score={result.score} record={result.record} runId={result.runId} pet={pet} level={level} onClose={() => setStory(false)} />}
       </div>
     );
   }
@@ -149,8 +149,8 @@ function DayRating({ board }: { board: DayBoard | null }) {
 
 // ---------------------------------------------------------------- сторис
 
-function StorySheet({ game, score, record, pet, level, onClose }: { game: (typeof GAMES)[number]; score: number; record: boolean; pet: FigureDto; level: number; onClose: () => void }) {
-  const { state: s, toast } = useGame();
+function StorySheet({ game, score, record, runId, pet, level, onClose }: { game: (typeof GAMES)[number]; score: number; record: boolean; runId: number; pet: FigureDto; level: number; onClose: () => void }) {
+  const { state: s, toast, refresh } = useGame();
   const [url, setUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const bot = /t\.me\/([^/?]+)/.exec(s.refLink)?.[1];
@@ -162,8 +162,9 @@ function StorySheet({ game, score, record, pet, level, onClose }: { game: (typeo
     if (!url) return;
     setBusy(true);
     try {
-      const r = await post<{ url: string }>("/api/stories", { image: url });
+      const r = await post<{ url: string; egg: boolean }>("/api/stories", { image: url, runId: record ? runId : undefined });
       shareStory(API_URL + r.url, text, { url: s.refLink, name: "Играть" });
+      if (r.egg) { toast("🥚 +1 яйцо за сторис с рекордом! Оно ждёт на экране «Яйцо»"); void refresh(); }
     } catch (e) { toast((e as ApiError).message); } finally { setBusy(false); }
   };
   return (
@@ -171,6 +172,7 @@ function StorySheet({ game, score, record, pet, level, onClose }: { game: (typeo
       <div className="sheet" role="dialog" aria-modal="true">
         <h2>Сторис готова</h2>
         <div className="story">{url ? <img src={url} alt={`Картинка результата: ${score} очков`} /> : <div className="spinner" />}</div>
+        {record && canShareStory() && <p className="team-line">🥚 За сторис с рекордом — 1 яйцо (раз в день)</p>}
         {canShareStory()
           ? <button className="btn" disabled={!url || busy} onClick={() => void publish()}>{busy ? "Готовим сторис…" : "Опубликовать в сторис"}</button>
           : <p className="muted">Нажмите на картинку и удерживайте, чтобы сохранить её и выложить в сторис.</p>}

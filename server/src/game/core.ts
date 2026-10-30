@@ -253,7 +253,7 @@ function roll(ctx: SeasonCtx, owned: Map<string, number>, minRarity: RarityKey |
 export const GRANT_LABEL: Record<DropSource, string> = {
   DAILY: "яйцо дня", STREAK_BONUS: "за серию дней", REFERRAL_BONUS: "за друга", FRIENDS_MILESTONE: "за друзей",
   CRAFT: "", GIFT: "", TRADE: "", ALBUM_ROW: "за ряд альбома", EVENT_REWARD: "за коллекцию события",
-  AD: "за рекламу", PURCHASE: "за Stars", ADMIN: "от администратора",
+  AD: "за рекламу", PURCHASE: "за Stars", ADMIN: "от администратора", STORY: "за сторис",
 };
 
 export type OpenResult = Awaited<ReturnType<typeof openEgg>>;

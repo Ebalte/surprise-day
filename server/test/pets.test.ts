@@ -97,7 +97,7 @@ test("мини-игра: энергия при старте, очки огран
   assert.equal(s.pet.gameBest.tower, 60);
   assert.equal(s.pet.gamesPlayed, 1);
   // Усталый питомец не играет
-  await prisma.pet.updateMany({ where: { userId: u.id }, data: { energy: 5 } });
+  await prisma.pet.updateMany({ where: { userId: u.id }, data: { energy: 2 } });
   assert.equal((await call(4, "POST", "/api/games/start", { game: "asmr" })).status, 400);
 });
 
@@ -225,4 +225,32 @@ test("напоминания: о каждой нужде один раз, сбр
   await notifyPets(api, "https://game.example", new Date(at.getTime() + 4 * H), async () => "Утёнок Плюх"); // 02:00 — ночь, молчим
   await notifyPets(api, "https://game.example", new Date(at.getTime() + 0.5 * H), async () => "Утёнок Плюх"); // уже писали
   assert.equal(texts.length, n);
+});
+
+test("рекорд засчитывается полностью, игра стоит 3 энергии, за сторис с рекордом — одно яйцо в день", async () => {
+  await call(16, "GET", "/api/state");
+  const u = await userOf(16);
+  await seed(u.id, "bear");
+  const t0 = new Date();
+  await setActivePet(u.id, "bear", t0);
+  const st = await startGame(u.id, "asmr", "own", t0);
+  assert.equal(Math.round(st.pet.energy), 77); // 80 − 3
+  const fin = await finishGame(u.id, st.result.runId, 420, new Date(t0.getTime() + 25_000));
+  assert.equal(fin.result.score, 420); // 400+ за 25 секунд ASMR засчитываются
+  assert.equal(fin.result.record, true);
+  assert.equal((await userOf(16)).gameBest && ((await userOf(16)).gameBest as Record<string, number>).asmr, 420);
+
+  const jpeg = `data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(50, 1)]).toString("base64")}`;
+  const first = await call(16, "POST", "/api/stories", { image: jpeg, runId: fin.result.runId });
+  assert.equal(first.body.egg, true);
+  assert.equal(await prisma.eggGrant.count({ where: { userId: u.id, source: "STORY" } }), 1);
+  // Та же игра ещё раз и вторая сторис за день — без яйца
+  assert.equal((await call(16, "POST", "/api/stories", { image: jpeg, runId: fin.result.runId })).body.egg, false);
+  const st2 = await startGame(u.id, "asmr", "own", new Date(t0.getTime() + 60_000));
+  const fin2 = await finishGame(u.id, st2.result.runId, 500, new Date(t0.getTime() + 90_000));
+  assert.equal(fin2.result.record, true);
+  assert.equal((await call(16, "POST", "/api/stories", { image: jpeg, runId: fin2.result.runId })).body.egg, false);
+  // Чужая игра не даёт яйцо
+  await call(17, "GET", "/api/state");
+  assert.equal((await call(17, "POST", "/api/stories", { image: jpeg, runId: fin2.result.runId })).body.egg, false);
 });

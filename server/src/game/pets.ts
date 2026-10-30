@@ -28,7 +28,7 @@ export const FOOD = {
 export type FoodKey = keyof typeof FOOD;
 export const GAMES = ["tower", "asmr", "rhythm", "sort", "jump"] as const;
 export type GameId = (typeof GAMES)[number];
-export const ENERGY_COST = 15;
+export const ENERGY_COST = 3;
 
 const clamp = (v: number) => Math.max(0, Math.min(100, v));
 export const needXp = (level: number) => 50 + 50 * level;
@@ -263,11 +263,11 @@ export function sleepPet(userId: number, asleep: boolean, target: Target = "own"
  * монеты за очки (не больше 60 за игру) и очки для командной цели пати.
  */
 const GAME_RULES: Record<GameId, { max: (sec: number) => number; coins: (score: number) => number; team: (score: number) => number }> = {
-  tower: { max: (s) => Math.min(500, Math.ceil(s * 2) * 6), coins: (x) => x, team: (x) => x * 3 }, // ≤ 2 этажа в секунду, до 6 очков за этаж
-  asmr: { max: (s) => Math.min(300, Math.ceil(s * 12)), coins: (x) => Math.floor(x / 3), team: (x) => x }, // раунд 25 секунд
-  rhythm: { max: (s) => Math.min(900, Math.ceil(s * 3) * 4), coins: (x) => Math.floor(x / 5), team: (x) => Math.floor(x / 2) }, // ≤ 3 ноты в секунду, до 4 очков за ноту
-  sort: { max: (s) => Math.min(400, Math.ceil(s * 3)), coins: (x) => x, team: (x) => x * 3 }, // ≤ 3 вкусняшки в секунду
-  jump: { max: (s) => Math.min(400, Math.ceil(s * 2)), coins: (x) => x * 2, team: (x) => x * 5 }, // ≤ 2 препятствия в секунду
+  tower: { max: (s) => Math.ceil(s * 2) * 6, coins: (x) => x, team: (x) => x * 3 }, // ≤ 2 этажа в секунду, до 6 очков за этаж
+  asmr: { max: (s) => Math.ceil(s * 40), coins: (x) => Math.floor(x / 5), team: (x) => x }, // быстрый свайп лопает целый ряд за миг
+  rhythm: { max: (s) => Math.ceil(s * 3) * 4, coins: (x) => Math.floor(x / 5), team: (x) => Math.floor(x / 2) }, // ≤ 3 ноты в секунду, до 4 очков за ноту
+  sort: { max: (s) => Math.ceil(s * 3), coins: (x) => x, team: (x) => x * 3 }, // ≤ 3 вкусняшки в секунду
+  jump: { max: (s) => Math.ceil(s * 5), coins: (x) => x, team: (x) => x * 4 }, // препятствие + ягода (+2) чаще раза в секунду
 };
 
 export function startGame(userId: number, game: GameId, target: Target = "own", now = new Date()) {
@@ -299,14 +299,14 @@ export async function finishGame(userId: number, runId: number, rawScore: number
     const best = { ...(user.gameBest as Record<string, number>) };
     const record = score > 0 && (best[game] == null || score > best[game]);
     if (record || best[game] == null) best[game] = Math.max(score, best[game] ?? 0);
-    await tx.gameRun.update({ where: { id: run.id }, data: { finishedAt: now, score, coins } });
+    await tx.gameRun.update({ where: { id: run.id }, data: { finishedAt: now, score, coins, record } });
     await tx.user.update({ where: { id: userId }, data: { gameBest: best, gamesPlayed: { increment: 1 } } });
     let team: { points: number; total: number; done: boolean } | null = null;
     if (pair && pair.id === run.pairId) {
       await careForPair(c, p, "game");
       team = await addTeamPoints(c, p, rules.team(score));
     }
-    return { score, coins, xp, record, team };
+    return { runId: run.id, score, coins, xp, record, team };
   });
 }
 

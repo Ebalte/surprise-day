@@ -32,6 +32,7 @@ enum DropSource {
   AD // за просмотр рекламы
   PURCHASE // куплено за Telegram Stars
   ADMIN // выдано администратором через админ-бота
+  STORY // за сторис с рекордом в мини-игре (одно в день)
 }
 
 enum AdPlacement {
@@ -542,6 +543,8 @@ model GameRun {
   coins      Int?
   /// Игра за общего питомца пати (очки идут в командную цель дня)
   pairId     Int?
+  /// Результат стал личным рекордом (за сторис с ним дают яйцо)
+  record     Boolean   @default(false)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
